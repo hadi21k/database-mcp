@@ -145,25 +145,90 @@ export class QueryExecutor {
   }
 
   /**
-   * Get list of tables in the database
+   * Get list of schemas in the database
    */
-  async listTables(profileName: string): Promise<Array<{ schema: string; table: string; rowCount: number }>> {
+  async listSchemas(profileName: string, includeSystem: boolean = false): Promise<Array<{
+    schemaName: string;
+    owner: string;
+    tableCount: number;
+    isSystemSchema: boolean;
+  }>> {
+    // Build WHERE clause based on includeSystem flag
+    const whereClause = includeSystem
+      ? '1=1'
+      : `s.name NOT IN ('guest', 'INFORMATION_SCHEMA', 'sys', 'db_owner', 'db_accessadmin', 
+                        'db_securityadmin', 'db_ddladmin', 'db_backupoperator', 'db_datareader', 
+                        'db_datawriter', 'db_denydatareader', 'db_denydatawriter') 
+         AND s.principal_id IS NOT NULL`;
+
     const query = `
       SELECT 
-        s.name as [schema],
-        t.name as [table],
-        ISNULL(SUM(p.rows), 0) as [rowCount]
-      FROM sys.tables t
-      INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-      LEFT JOIN sys.partitions p ON t.object_id = p.object_id AND p.index_id IN (0, 1)
-      WHERE t.is_ms_shipped = 0
-      GROUP BY s.name, t.name
-      ORDER BY s.name, t.name
+        s.name as schemaName,
+        ISNULL(USER_NAME(s.principal_id), '') as owner,
+        COUNT(DISTINCT t.object_id) as tableCount,
+        CASE 
+          WHEN s.name IN ('dbo', 'guest', 'INFORMATION_SCHEMA', 'sys', 'db_owner', 'db_accessadmin', 
+                         'db_securityadmin', 'db_ddladmin', 'db_backupoperator', 'db_datareader', 
+                         'db_datawriter', 'db_denydatareader', 'db_denydatawriter') 
+          OR s.principal_id IS NULL
+          THEN 1 
+          ELSE 0 
+        END as isSystemSchema
+      FROM sys.schemas s
+      LEFT JOIN sys.tables t ON s.schema_id = t.schema_id AND t.is_ms_shipped = 0
+      WHERE ${whereClause}
+      GROUP BY s.name, s.principal_id
+      ORDER BY s.name
     `;
 
     try {
       const pool = await this.connectionManager.getPool(profileName);
       const result = await pool.request().query(query);
+
+      return (result.recordset || []).map((row: any) => ({
+        schemaName: row.schemaName,
+        owner: row.owner || 'N/A',
+        tableCount: row.tableCount || 0,
+        isSystemSchema: row.isSystemSchema === 1,
+      }));
+    } catch (error) {
+      throw createFriendlyError(error);
+    }
+  }
+
+  /**
+   * Get list of tables in the database
+   */
+  async listTables(profileName: string, schemaFilter?: string): Promise<Array<{
+    schema: string;
+    table: string;
+    rowCount: number;
+    type: string;
+  }>> {
+    const query = `
+      SELECT 
+        s.name as [schema],
+        t.name as [table],
+        ISNULL(SUM(p.rows), 0) as [rowCount],
+        t.type_desc as [type]
+      FROM sys.tables t
+      INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+      LEFT JOIN sys.partitions p ON t.object_id = p.object_id AND p.index_id IN (0, 1)
+      WHERE t.is_ms_shipped = 0
+        ${schemaFilter ? 'AND s.name = @schemaFilter' : ''}
+      GROUP BY s.name, t.name, t.type_desc
+      ORDER BY s.name, t.name
+    `;
+
+    try {
+      const pool = await this.connectionManager.getPool(profileName);
+      const request = pool.request();
+
+      if (schemaFilter) {
+        request.input('schemaFilter', sql.VarChar, schemaFilter);
+      }
+
+      const result = await request.query(query);
       return result.recordset || [];
     } catch (error) {
       throw createFriendlyError(error);
@@ -171,7 +236,75 @@ export class QueryExecutor {
   }
 
   /**
-   * Get table schema information
+   * Get detailed table schema information (enhanced version)
+   */
+  async describeTable(
+    profileName: string,
+    schemaName: string,
+    tableName: string
+  ): Promise<Array<{
+    columnName: string;
+    ordinalPosition: number;
+    dataType: string;
+    maxLength: number | null;
+    precision: number | null;
+    scale: number | null;
+    isNullable: boolean;
+    isPrimaryKey: boolean;
+    isIdentity: boolean;
+    isComputed: boolean;
+    defaultValue: string | null;
+    description: string | null;
+  }>> {
+    const query = `
+      SELECT 
+        c.name as columnName,
+        c.column_id as ordinalPosition,
+        TYPE_NAME(c.user_type_id) as dataType,
+        CASE 
+          WHEN TYPE_NAME(c.user_type_id) IN ('nchar', 'nvarchar') THEN c.max_length / 2
+          WHEN TYPE_NAME(c.user_type_id) IN ('char', 'varchar', 'binary', 'varbinary') THEN c.max_length
+          ELSE NULL
+        END as maxLength,
+        c.precision as [precision],
+        c.scale as scale,
+        c.is_nullable as isNullable,
+        CASE WHEN pk.column_id IS NOT NULL THEN 1 ELSE 0 END as isPrimaryKey,
+        c.is_identity as isIdentity,
+        c.is_computed as isComputed,
+        dc.definition as defaultValue,
+        ep.value as [description]
+      FROM sys.columns c
+      INNER JOIN sys.tables tb ON c.object_id = tb.object_id
+      INNER JOIN sys.schemas s ON tb.schema_id = s.schema_id
+      LEFT JOIN (
+        SELECT ic.object_id, ic.column_id
+        FROM sys.index_columns ic
+        INNER JOIN sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+        WHERE i.is_primary_key = 1
+      ) pk ON c.object_id = pk.object_id AND c.column_id = pk.column_id
+      LEFT JOIN sys.default_constraints dc ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
+      LEFT JOIN sys.extended_properties ep ON ep.major_id = c.object_id AND ep.minor_id = c.column_id AND ep.name = 'MS_Description'
+      WHERE s.name = @schema AND tb.name = @table
+      ORDER BY c.column_id
+    `;
+
+    try {
+      const pool = await this.connectionManager.getPool(profileName);
+      const result = await pool
+        .request()
+        .input('schema', sql.VarChar, schemaName)
+        .input('table', sql.VarChar, tableName)
+        .query(query);
+
+      return result.recordset || [];
+    } catch (error) {
+      throw createFriendlyError(error);
+    }
+  }
+
+  /**
+   * Get table schema information (legacy - kept for compatibility)
    */
   async getTableSchema(
     profileName: string,
@@ -342,7 +475,7 @@ export class QueryExecutor {
 
     try {
       const pool = await this.connectionManager.getPool(profileName);
-      
+
       // Execute both queries in parallel
       const [outgoingResult, incomingResult] = await Promise.all([
         pool.request()
@@ -409,4 +542,115 @@ export class QueryExecutor {
       throw createFriendlyError(error);
     }
   }
+
+  /**
+   * Get all indexes for a table
+   */
+  async getTableIndexes(
+    profileName: string,
+    schemaName: string,
+    tableName: string
+  ): Promise<Array<{
+    indexName: string;
+    type: string;
+    isUnique: boolean;
+    isPrimaryKey: boolean;
+    isUniqueConstraint: boolean;
+    isDisabled: boolean;
+    filterDefinition: string | null;
+    keyColumns: Array<{ columnName: string; isDescending: boolean; keyOrdinal: number }>;
+    includedColumns: string[];
+  }>> {
+    const query = `
+      SELECT 
+        i.name as indexName,
+        i.type_desc as [type],
+        i.is_unique as isUnique,
+        i.is_primary_key as isPrimaryKey,
+        i.is_unique_constraint as isUniqueConstraint,
+        i.is_disabled as isDisabled,
+        i.filter_definition as filterDefinition,
+        c.name as columnName,
+        ic.is_descending_key as isDescending,
+        ic.key_ordinal as keyOrdinal,
+        ic.is_included_column as isIncluded
+      FROM sys.indexes i
+      INNER JOIN sys.tables t ON i.object_id = t.object_id
+      INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+      LEFT JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+      LEFT JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+      WHERE s.name = @schema 
+        AND t.name = @table
+        AND i.type > 0  -- Exclude heaps (type = 0)
+      ORDER BY i.name, ic.key_ordinal, ic.index_column_id
+    `;
+
+    try {
+      const pool = await this.connectionManager.getPool(profileName);
+      const result = await pool
+        .request()
+        .input('schema', sql.VarChar, schemaName)
+        .input('table', sql.VarChar, tableName)
+        .query(query);
+
+      // Group by index name
+      const indexMap = new Map<string, {
+        indexName: string;
+        type: string;
+        isUnique: boolean;
+        isPrimaryKey: boolean;
+        isUniqueConstraint: boolean;
+        isDisabled: boolean;
+        filterDefinition: string | null;
+        keyColumns: Array<{ columnName: string; isDescending: boolean; keyOrdinal: number }>;
+        includedColumns: string[];
+      }>();
+
+      for (const row of result.recordset) {
+        if (!indexMap.has(row.indexName)) {
+          indexMap.set(row.indexName, {
+            indexName: row.indexName,
+            type: row.type,
+            isUnique: row.isUnique,
+            isPrimaryKey: row.isPrimaryKey,
+            isUniqueConstraint: row.isUniqueConstraint,
+            isDisabled: row.isDisabled,
+            filterDefinition: row.filterDefinition || null,
+            keyColumns: [],
+            includedColumns: [],
+          });
+        }
+
+        const index = indexMap.get(row.indexName)!;
+
+        if (row.columnName) {
+          if (row.isIncluded) {
+            index.includedColumns.push(row.columnName);
+          } else if (row.keyOrdinal > 0) {
+            index.keyColumns.push({
+              columnName: row.columnName,
+              isDescending: row.isDescending,
+              keyOrdinal: row.keyOrdinal,
+            });
+          }
+        }
+      }
+
+      // Sort key columns by ordinal
+      for (const index of indexMap.values()) {
+        index.keyColumns.sort((a, b) => a.keyOrdinal - b.keyOrdinal);
+      }
+
+      return Array.from(indexMap.values());
+    } catch (error) {
+      throw createFriendlyError(error);
+    }
+  }
+
+  /**
+   * Get estimated execution plan for a query (does not execute the query)
+   * Uses SET SHOWPLAN_XML to get the plan without execution cost
+   * Note: SET SHOWPLAN_XML returns the plan without executing the query
+   */
 }
+

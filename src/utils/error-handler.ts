@@ -30,19 +30,19 @@ export function sanitizeError(error: unknown): string {
  */
 export function createFriendlyError(error: unknown): Error {
   const sanitized = sanitizeError(error);
-  
+
   if (sanitized.includes('Login failed')) {
     return new Error('Authentication failed. Please check your credentials.');
   }
-  
+
   if (sanitized.includes('timeout')) {
     return new Error('Query timeout. The query took too long to execute.');
   }
-  
+
   if (sanitized.includes('Invalid object name')) {
     return new Error('Table or view not found. Please check the object name.');
   }
-  
+
   if (sanitized.includes('Incorrect syntax')) {
     return new Error(`SQL syntax error: ${sanitized}`);
   }

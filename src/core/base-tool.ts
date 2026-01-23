@@ -14,7 +14,7 @@ export abstract class BaseTool {
   constructor(
     protected connectionManager: ConnectionManager,
     protected queryExecutor: QueryExecutor
-  ) {}
+  ) { }
 
   /**
    * Execute the tool with validated input
