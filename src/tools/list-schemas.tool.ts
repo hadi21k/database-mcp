@@ -2,12 +2,12 @@ import { z } from 'zod';
 import { BaseTool } from '../core/base-tool.js';
 
 /**
- * Tool to list all schemas in a SQL Server database
+ * Tool to list all schemas in a database
  * Returns schemas with owner information and table counts
  */
 export class ListSchemasTool extends BaseTool {
   readonly name = 'list-schemas';
-  readonly description = 'List all schemas in the SQL Server database with owner information and table counts. Excludes system schemas by default.';
+  readonly description = 'List all schemas in the database with owner information and table counts. Excludes system schemas by default.';
 
   readonly inputSchema = z.object({
     profile: z.string().describe('Connection profile name'),
@@ -18,7 +18,8 @@ export class ListSchemasTool extends BaseTool {
     const validatedInput = this.validateInput(input);
     const { profile, includeSystem } = validatedInput;
 
-    const result = await this.queryExecutor.listSchemas(profile, includeSystem || false);
+    const driver = await this.getDriver(profile);
+    const result = await driver.listSchemas(includeSystem || false);
 
     return {
       success: true,

@@ -1,19 +1,22 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ListTablesTool } from '../../src/tools/list-tables.tool.js';
-import { ConnectionManager } from '../../src/database/connection-manager.js';
-import { QueryExecutor } from '../../src/database/query-executor.js';
+import type { IDatabaseDriver } from '../../src/database/interfaces/database-driver.js';
 
 describe('ListTablesTool', () => {
   let tool: ListTablesTool;
-  let mockConnectionManager: ConnectionManager;
-  let mockQueryExecutor: QueryExecutor;
+  let mockDriver: IDatabaseDriver;
 
   beforeEach(() => {
-    mockConnectionManager = {} as ConnectionManager;
-    mockQueryExecutor = {
+    mockDriver = {
+      dialect: 'sqlserver',
       listTables: vi.fn(),
     } as any;
-    tool = new ListTablesTool(mockConnectionManager, mockQueryExecutor);
+
+    const mockConnectionManager = {
+      getDriver: vi.fn().mockResolvedValue(mockDriver),
+    } as any;
+
+    tool = new ListTablesTool(mockConnectionManager);
   });
 
   describe('Tool Properties', () => {
@@ -23,7 +26,6 @@ describe('ListTablesTool', () => {
 
     it('should have descriptive description', () => {
       expect(tool.description).toContain('tables');
-      expect(tool.description).toContain('SQL Server');
     });
 
     it('should have proper input schema', () => {
@@ -44,7 +46,7 @@ describe('ListTablesTool', () => {
           { schema: 'sales', table: 'Products', rowCount: 50, type: 'USER_TABLE' },
         ];
 
-        vi.mocked(mockQueryExecutor.listTables).mockResolvedValue(mockTables);
+        vi.mocked(mockDriver.listTables).mockResolvedValue(mockTables);
 
         const result = await tool.execute({
           profile: 'test',
@@ -63,20 +65,20 @@ describe('ListTablesTool', () => {
           { schema: 'dbo', table: 'Orders', rowCount: 500, type: 'USER_TABLE' },
         ];
 
-        vi.mocked(mockQueryExecutor.listTables).mockResolvedValue(mockTables);
+        vi.mocked(mockDriver.listTables).mockResolvedValue(mockTables);
 
         const result = await tool.execute({
           profile: 'test',
           schema: 'dbo',
         });
 
-        expect(mockQueryExecutor.listTables).toHaveBeenCalledWith('test', 'dbo');
+        expect(mockDriver.listTables).toHaveBeenCalledWith('dbo');
         expect(result.success).toBe(true);
         expect(result.data.tables).toHaveLength(2);
       });
 
       it('should handle empty table list', async () => {
-        vi.mocked(mockQueryExecutor.listTables).mockResolvedValue([]);
+        vi.mocked(mockDriver.listTables).mockResolvedValue([]);
 
         const result = await tool.execute({
           profile: 'test',
@@ -97,7 +99,7 @@ describe('ListTablesTool', () => {
       });
 
       it('should accept optional schema', async () => {
-        vi.mocked(mockQueryExecutor.listTables).mockResolvedValue([]);
+        vi.mocked(mockDriver.listTables).mockResolvedValue([]);
 
         await expect(
           tool.execute({ profile: 'test' })
@@ -106,8 +108,8 @@ describe('ListTablesTool', () => {
     });
 
     describe('error handling', () => {
-      it('should propagate query executor errors', async () => {
-        vi.mocked(mockQueryExecutor.listTables).mockRejectedValue(
+      it('should propagate driver errors', async () => {
+        vi.mocked(mockDriver.listTables).mockRejectedValue(
           new Error('Database connection failed')
         );
 

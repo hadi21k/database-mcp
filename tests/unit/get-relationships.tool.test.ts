@@ -1,20 +1,23 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { GetRelationshipsTool } from '../../src/tools/get-relationships.tool.js';
-import { ConnectionManager } from '../../src/database/connection-manager.js';
-import { QueryExecutor } from '../../src/database/query-executor.js';
+import type { IDatabaseDriver } from '../../src/database/interfaces/database-driver.js';
 import { mockRelationships } from '../fixtures/table-data.js';
 
 describe('GetRelationshipsTool', () => {
   let tool: GetRelationshipsTool;
-  let mockConnectionManager: ConnectionManager;
-  let mockQueryExecutor: QueryExecutor;
+  let mockDriver: IDatabaseDriver;
 
   beforeEach(() => {
-    mockConnectionManager = {} as ConnectionManager;
-    mockQueryExecutor = {
-      getTableRelations: vi.fn(),
+    mockDriver = {
+      dialect: 'sqlserver',
+      getRelationships: vi.fn(),
     } as any;
-    tool = new GetRelationshipsTool(mockConnectionManager, mockQueryExecutor);
+
+    const mockConnectionManager = {
+      getDriver: vi.fn().mockResolvedValue(mockDriver),
+    } as any;
+
+    tool = new GetRelationshipsTool(mockConnectionManager);
   });
 
   describe('Tool Properties', () => {
@@ -41,7 +44,7 @@ describe('GetRelationshipsTool', () => {
   describe('execute', () => {
     describe('with valid input', () => {
       it('should return outgoing and incoming relationships', async () => {
-        vi.mocked(mockQueryExecutor.getTableRelations).mockResolvedValue(mockRelationships);
+        vi.mocked(mockDriver.getRelationships).mockResolvedValue(mockRelationships);
 
         const result = await tool.execute({
           profile: 'test',
@@ -61,7 +64,7 @@ describe('GetRelationshipsTool', () => {
       });
 
       it('should include join hints for outgoing relationships', async () => {
-        vi.mocked(mockQueryExecutor.getTableRelations).mockResolvedValue(mockRelationships);
+        vi.mocked(mockDriver.getRelationships).mockResolvedValue(mockRelationships);
 
         const result = await tool.execute({
           profile: 'test',
@@ -75,7 +78,7 @@ describe('GetRelationshipsTool', () => {
       });
 
       it('should include join hints for incoming relationships', async () => {
-        vi.mocked(mockQueryExecutor.getTableRelations).mockResolvedValue(mockRelationships);
+        vi.mocked(mockDriver.getRelationships).mockResolvedValue(mockRelationships);
 
         const result = await tool.execute({
           profile: 'test',
@@ -104,7 +107,7 @@ describe('GetRelationshipsTool', () => {
           incoming: [],
         };
 
-        vi.mocked(mockQueryExecutor.getTableRelations).mockResolvedValue(compositeRelations);
+        vi.mocked(mockDriver.getRelationships).mockResolvedValue(compositeRelations);
 
         const result = await tool.execute({
           profile: 'test',
@@ -124,7 +127,7 @@ describe('GetRelationshipsTool', () => {
           incoming: [],
         };
 
-        vi.mocked(mockQueryExecutor.getTableRelations).mockResolvedValue(noRelations);
+        vi.mocked(mockDriver.getRelationships).mockResolvedValue(noRelations);
 
         const result = await tool.execute({
           profile: 'test',
@@ -163,7 +166,7 @@ describe('GetRelationshipsTool', () => {
           incoming: [],
         };
 
-        vi.mocked(mockQueryExecutor.getTableRelations).mockResolvedValue(multipleOutgoing);
+        vi.mocked(mockDriver.getRelationships).mockResolvedValue(multipleOutgoing);
 
         const result = await tool.execute({
           profile: 'test',
@@ -188,7 +191,7 @@ describe('GetRelationshipsTool', () => {
           incoming: [],
         };
 
-        vi.mocked(mockQueryExecutor.getTableRelations).mockResolvedValue(crossSchemaRelations);
+        vi.mocked(mockDriver.getRelationships).mockResolvedValue(crossSchemaRelations);
 
         const result = await tool.execute({
           profile: 'test',
@@ -241,8 +244,8 @@ describe('GetRelationshipsTool', () => {
     });
 
     describe('error handling', () => {
-      it('should propagate query executor errors', async () => {
-        vi.mocked(mockQueryExecutor.getTableRelations).mockRejectedValue(
+      it('should propagate driver errors', async () => {
+        vi.mocked(mockDriver.getRelationships).mockRejectedValue(
           new Error('Database connection failed')
         );
 
@@ -256,7 +259,7 @@ describe('GetRelationshipsTool', () => {
       });
 
       it('should handle non-existent tables gracefully', async () => {
-        vi.mocked(mockQueryExecutor.getTableRelations).mockRejectedValue(
+        vi.mocked(mockDriver.getRelationships).mockRejectedValue(
           new Error('Table or view not found')
         );
 

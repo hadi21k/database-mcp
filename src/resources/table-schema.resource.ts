@@ -2,12 +2,12 @@ import { BaseResource } from '../core/base-resource.js';
 
 /**
  * Resource: Table schema information
- * URI pattern: sqlserver:///{profile}/tables/{schema}/{table}/schema
+ * URI pattern: db:///{profile}/tables/{schema}/{table}/schema
  */
 export class TableSchemaResource extends BaseResource {
-  readonly uriTemplate = 'sqlserver:///{profile}/tables/{schema}/{table}/schema';
+  readonly uriTemplate = 'db:///{profile}/tables/{schema}/{table}/schema';
   readonly name = 'Table Schema';
-  readonly description = 'Provides detailed schema information for a SQL Server table including columns, data types, nullability, and primary keys.';
+  readonly description = 'Provides detailed schema information for a table including columns, data types, nullability, and primary keys.';
   readonly mimeType = 'application/json';
 
   async getContent(uri: string): Promise<string> {
@@ -15,10 +15,11 @@ export class TableSchemaResource extends BaseResource {
     const { profile, schema, table } = params;
 
     if (!profile || !schema || !table) {
-      throw new Error('Invalid URI format. Expected: sqlserver:///{profile}/tables/{schema}/{table}/schema');
+      throw new Error('Invalid URI format. Expected: db:///{profile}/tables/{schema}/{table}/schema');
     }
 
-    const schemaInfo = await this.queryExecutor.getTableSchema(profile, schema, table);
+    const driver = await this.getDriver(profile);
+    const schemaInfo = await driver.getTableSchema(schema, table);
 
     const result = {
       profile,

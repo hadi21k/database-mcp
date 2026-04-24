@@ -114,7 +114,7 @@ export function hasRowLimit(query: string): boolean {
 }
 
 /**
- * Injects TOP clause if query doesn't have a limit
+ * Injects TOP clause if query doesn't have a limit (SQL Server dialect)
  * Returns modified query with TOP clause
  */
 export function injectTopClause(query: string, maxRows: number): string {
@@ -122,15 +122,66 @@ export function injectTopClause(query: string, maxRows: number): string {
   if (hasRowLimit(query)) {
     return query;
   }
-  
+
   // Find SELECT keyword and inject TOP after it
   const selectRegex = /^(\s*(?:WITH\s+[\s\S]*?\)\s*)?SELECT)\s+/i;
   const match = query.match(selectRegex);
-  
+
   if (match) {
     return query.replace(selectRegex, `$1 TOP ${maxRows} `);
   }
-  
+
   // Fallback: prepend at the beginning (shouldn't happen with valid SELECT)
   return `SELECT TOP ${maxRows} * FROM (${query}) AS limited_query`;
+}
+
+/**
+ * Check if a PostgreSQL query already has a LIMIT clause
+ */
+export function hasLimitClause(query: string): boolean {
+  let cleanQuery = query.replace(/--[^\n]*/g, '');
+  cleanQuery = cleanQuery.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  return /\bLIMIT\s+\d+\b/i.test(cleanQuery);
+}
+
+/**
+ * Injects LIMIT clause if query doesn't have one (PostgreSQL dialect)
+ * Appends LIMIT at the end of the query
+ */
+export function injectLimitClause(query: string, maxRows: number): string {
+  // If already has LIMIT or SQL Server TOP/OFFSET-FETCH, return as-is
+  if (hasLimitClause(query) || hasRowLimit(query)) {
+    return query;
+  }
+
+  // LIMIT goes at the end of the query (simpler than TOP injection)
+  return `${query.trimEnd()} LIMIT ${maxRows}`;
+}
+
+/**
+ * Dialect-aware row limit injection.
+ * Dispatches to the correct function based on database dialect.
+ */
+export function injectRowLimit(dialect: 'sqlserver' | 'postgresql', query: string, maxRows: number): string {
+  switch (dialect) {
+    case 'sqlserver':
+      return injectTopClause(query, maxRows);
+    case 'postgresql':
+      return injectLimitClause(query, maxRows);
+  }
+}
+
+/**
+ * Quote an identifier using the correct syntax for the dialect.
+ * SQL Server: [name]
+ * PostgreSQL: "name"
+ */
+export function quoteIdentifier(dialect: 'sqlserver' | 'postgresql', name: string): string {
+  switch (dialect) {
+    case 'sqlserver':
+      return `[${name}]`;
+    case 'postgresql':
+      return `"${name}"`;
+  }
 }

@@ -1,14 +1,15 @@
 import { z } from 'zod';
 import { BaseTool } from '../core/base-tool.js';
+import { isReadOnlyQuery, validateParameters, hasCrossDatabaseQuery } from '../utils/validation.js';
 
 /**
- * Tool to execute SELECT queries against SQL Server
+ * Tool to execute SELECT queries against a database
  * Provides safe query execution with parameter support and result limiting
  */
 export class RunSelectQueryTool extends BaseTool {
   readonly name = 'run-select-query';
-  readonly description = 'Execute a SELECT query against a SQL Server database with optional parameters. Only SELECT queries are allowed for security. Results are automatically limited to prevent excessive data transfer.';
-  
+  readonly description = 'Execute a SELECT query against a database with optional parameters. Only SELECT queries are allowed for security. Results are automatically limited to prevent excessive data transfer.';
+
   readonly inputSchema = z.object({
     profile: z.string().describe('Connection profile name'),
     query: z.string().describe('SQL SELECT query to execute'),
@@ -20,10 +21,23 @@ export class RunSelectQueryTool extends BaseTool {
     const validatedInput = this.validateInput(input);
     const { profile, query, parameters, maxRows } = validatedInput;
 
-    const result = await this.queryExecutor.executeQuerySafe(profile, query, {
-      parameters,
-      maxRows: maxRows || 1000,
-    });
+    // Safety validation (database-agnostic)
+    if (!isReadOnlyQuery(query)) {
+      throw new Error(
+        'Only SELECT queries are allowed. INSERT, UPDATE, DELETE, and DDL statements are not permitted.'
+      );
+    }
+    if (hasCrossDatabaseQuery(query)) {
+      throw new Error(
+        'Cross-database queries are not allowed. Use single-database queries only (schema.table, not database.schema.table).'
+      );
+    }
+    if (parameters) {
+      validateParameters(parameters);
+    }
+
+    const driver = await this.getDriver(profile);
+    const result = await driver.executeQuery(query, parameters, maxRows || 1000);
 
     return {
       success: true,

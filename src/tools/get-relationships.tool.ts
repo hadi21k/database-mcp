@@ -7,8 +7,8 @@ import { BaseTool } from '../core/base-tool.js';
  */
 export class GetRelationshipsTool extends BaseTool {
   readonly name = 'get-relationships';
-  readonly description = 'Get foreign key relationships for a SQL Server table. Returns both outgoing relationships (this table references other tables) and incoming relationships (other tables reference this table) with column mappings and suggested JOIN syntax.';
-  
+  readonly description = 'Get foreign key relationships for a table. Returns both outgoing relationships (this table references other tables) and incoming relationships (other tables reference this table) with column mappings and suggested JOIN syntax.';
+
   readonly inputSchema = z.object({
     profile: z.string().describe('Connection profile name'),
     schema: z.string().describe('Schema name (e.g., "dbo")'),
@@ -19,7 +19,8 @@ export class GetRelationshipsTool extends BaseTool {
     const validatedInput = this.validateInput(input);
     const { profile, schema, table } = validatedInput;
 
-    const relations = await this.queryExecutor.getTableRelations(profile, schema, table);
+    const driver = await this.getDriver(profile);
+    const relations = await driver.getRelationships(schema, table);
 
     // Add helper information for JOINs
     const outgoingWithHints = relations.outgoing.map(rel => ({

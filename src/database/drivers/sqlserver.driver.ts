@@ -1,178 +1,81 @@
-import { ConnectionManager } from './connection-manager.js';
-import { isReadOnlyQuery, validateParameters, hasCrossDatabaseQuery, injectTopClause } from '../utils/validation.js';
-import { createFriendlyError } from '../utils/error-handler.js';
+import { ConnectionPool } from 'mssql';
 import sql from 'mssql';
+import { createFriendlyError } from '../../utils/error-handler.js';
+import { injectRowLimit } from '../../utils/validation.js';
+import type {
+  IDatabaseDriver,
+  IQueryResult,
+  ISchemaInfo,
+  ITableInfo,
+  IColumnInfo,
+  IColumnBasicInfo,
+  IRelationships,
+  IIndexInfo,
+  IDatabaseInfo,
+} from '../interfaces/database-driver.js';
 
 /**
- * Query execution result
+ * SQL Server implementation of IDatabaseDriver.
+ * Wraps an mssql ConnectionPool and implements all metadata queries
+ * using SQL Server system views (sys.*).
  */
-export interface QueryResult {
-  rows: any[];
-  rowCount: number;
-  columns: string[];
-  limited?: boolean; // True if results were limited by maxRows
-}
+export class SqlServerDriver implements IDatabaseDriver {
+  readonly dialect = 'sqlserver' as const;
 
-/**
- * Safe query execution options
- */
-export interface SafeQueryOptions {
-  parameters?: Record<string, any>;
-  maxRows?: number;
-}
+  constructor(private pool: ConnectionPool) {}
 
-/**
- * Executes SQL queries with validation and error handling
- */
-export class QueryExecutor {
-  constructor(private connectionManager: ConnectionManager) { }
-
-  /**
-   * Execute a SELECT query with parameters (legacy - no safety features)
-   * Use executeQuerySafe for production queries
-   */
   async executeQuery(
-    profileName: string,
     query: string,
-    parameters?: Record<string, any>
-  ): Promise<QueryResult> {
-    // Validate query is read-only
-    if (!isReadOnlyQuery(query)) {
-      throw new Error(
-        'Only SELECT queries are allowed. INSERT, UPDATE, DELETE, and DDL statements are not permitted.'
-      );
-    }
-
-    // Validate parameters
-    if (parameters) {
-      validateParameters(parameters);
-    }
+    params?: Record<string, any>,
+    maxRows?: number
+  ): Promise<IQueryResult> {
+    const limitedQuery = maxRows ? injectRowLimit(this.dialect, query, maxRows) : query;
 
     try {
-      const pool = await this.connectionManager.getPool(profileName);
-      const request = pool.request();
-
-      // Add parameters to request
-      if (parameters) {
-        for (const [key, value] of Object.entries(parameters)) {
+      const request = this.pool.request();
+      if (params) {
+        for (const [key, value] of Object.entries(params)) {
           request.input(key, value);
         }
       }
 
-      // Execute query
-      const result = await request.query(query);
-
-      // Extract column names
-      const columns = result.recordset.columns
-        ? Object.keys(result.recordset.columns)
-        : [];
-
-      return {
-        rows: result.recordset || [],
-        rowCount: result.recordset?.length || 0,
-        columns,
-      };
-    } catch (error) {
-      throw createFriendlyError(error);
-    }
-  }
-
-  /**
-   * Execute a SELECT query with safety features:
-   * - Enforces max rows by injecting TOP clause
-   * - Blocks cross-database queries
-   * - Timeout configured at connection profile level
-   */
-  async executeQuerySafe(
-    profileName: string,
-    query: string,
-    options: SafeQueryOptions = {}
-  ): Promise<QueryResult> {
-    const { parameters, maxRows = 1000 } = options;
-
-    // Validate query is read-only
-    if (!isReadOnlyQuery(query)) {
-      throw new Error(
-        'Only SELECT queries are allowed. INSERT, UPDATE, DELETE, and DDL statements are not permitted.'
-      );
-    }
-
-    // Block cross-database queries
-    if (hasCrossDatabaseQuery(query)) {
-      throw new Error(
-        'Cross-database queries are not allowed. Use single-database queries only (schema.table, not database.schema.table).'
-      );
-    }
-
-    // Validate parameters
-    if (parameters) {
-      validateParameters(parameters);
-    }
-
-    // Inject TOP clause if query doesn't have a limit
-    const limitedQuery = injectTopClause(query, maxRows);
-
-    try {
-      const pool = await this.connectionManager.getPool(profileName);
-      const request = pool.request();
-
-      // Add parameters to request
-      if (parameters) {
-        for (const [key, value] of Object.entries(parameters)) {
-          request.input(key, value);
-        }
-      }
-
-      // Execute query
       const result = await request.query(limitedQuery);
-
-      // Extract column names
       const columns = result.recordset.columns
         ? Object.keys(result.recordset.columns)
         : [];
-
       const rowCount = result.recordset?.length || 0;
 
       return {
         rows: result.recordset || [],
         rowCount,
         columns,
-        limited: rowCount >= maxRows, // True if we hit the limit
+        limited: maxRows ? rowCount >= maxRows : undefined,
       };
     } catch (error) {
       throw createFriendlyError(error);
     }
   }
 
-  /**
-   * Get list of schemas in the database
-   */
-  async listSchemas(profileName: string, includeSystem: boolean = false): Promise<Array<{
-    schemaName: string;
-    owner: string;
-    tableCount: number;
-    isSystemSchema: boolean;
-  }>> {
-    // Build WHERE clause based on includeSystem flag
+  async listSchemas(includeSystem: boolean = false): Promise<ISchemaInfo[]> {
     const whereClause = includeSystem
       ? '1=1'
-      : `s.name NOT IN ('guest', 'INFORMATION_SCHEMA', 'sys', 'db_owner', 'db_accessadmin', 
-                        'db_securityadmin', 'db_ddladmin', 'db_backupoperator', 'db_datareader', 
-                        'db_datawriter', 'db_denydatareader', 'db_denydatawriter') 
+      : `s.name NOT IN ('guest', 'INFORMATION_SCHEMA', 'sys', 'db_owner', 'db_accessadmin',
+                        'db_securityadmin', 'db_ddladmin', 'db_backupoperator', 'db_datareader',
+                        'db_datawriter', 'db_denydatareader', 'db_denydatawriter')
          AND s.principal_id IS NOT NULL`;
 
     const query = `
-      SELECT 
+      SELECT
         s.name as schemaName,
         ISNULL(USER_NAME(s.principal_id), '') as owner,
         COUNT(DISTINCT t.object_id) as tableCount,
-        CASE 
-          WHEN s.name IN ('dbo', 'guest', 'INFORMATION_SCHEMA', 'sys', 'db_owner', 'db_accessadmin', 
-                         'db_securityadmin', 'db_ddladmin', 'db_backupoperator', 'db_datareader', 
-                         'db_datawriter', 'db_denydatareader', 'db_denydatawriter') 
+        CASE
+          WHEN s.name IN ('dbo', 'guest', 'INFORMATION_SCHEMA', 'sys', 'db_owner', 'db_accessadmin',
+                         'db_securityadmin', 'db_ddladmin', 'db_backupoperator', 'db_datareader',
+                         'db_datawriter', 'db_denydatareader', 'db_denydatawriter')
           OR s.principal_id IS NULL
-          THEN 1 
-          ELSE 0 
+          THEN 1
+          ELSE 0
         END as isSystemSchema
       FROM sys.schemas s
       LEFT JOIN sys.tables t ON s.schema_id = t.schema_id AND t.is_ms_shipped = 0
@@ -182,9 +85,7 @@ export class QueryExecutor {
     `;
 
     try {
-      const pool = await this.connectionManager.getPool(profileName);
-      const result = await pool.request().query(query);
-
+      const result = await this.pool.request().query(query);
       return (result.recordset || []).map((row: any) => ({
         schemaName: row.schemaName,
         owner: row.owner || 'N/A',
@@ -196,17 +97,9 @@ export class QueryExecutor {
     }
   }
 
-  /**
-   * Get list of tables in the database
-   */
-  async listTables(profileName: string, schemaFilter?: string): Promise<Array<{
-    schema: string;
-    table: string;
-    rowCount: number;
-    type: string;
-  }>> {
+  async listTables(schemaFilter?: string): Promise<ITableInfo[]> {
     const query = `
-      SELECT 
+      SELECT
         s.name as [schema],
         t.name as [table],
         ISNULL(SUM(p.rows), 0) as [rowCount],
@@ -221,13 +114,10 @@ export class QueryExecutor {
     `;
 
     try {
-      const pool = await this.connectionManager.getPool(profileName);
-      const request = pool.request();
-
+      const request = this.pool.request();
       if (schemaFilter) {
         request.input('schemaFilter', sql.VarChar, schemaFilter);
       }
-
       const result = await request.query(query);
       return result.recordset || [];
     } catch (error) {
@@ -235,33 +125,13 @@ export class QueryExecutor {
     }
   }
 
-  /**
-   * Get detailed table schema information (enhanced version)
-   */
-  async describeTable(
-    profileName: string,
-    schemaName: string,
-    tableName: string
-  ): Promise<Array<{
-    columnName: string;
-    ordinalPosition: number;
-    dataType: string;
-    maxLength: number | null;
-    precision: number | null;
-    scale: number | null;
-    isNullable: boolean;
-    isPrimaryKey: boolean;
-    isIdentity: boolean;
-    isComputed: boolean;
-    defaultValue: string | null;
-    description: string | null;
-  }>> {
+  async describeTable(schemaName: string, tableName: string): Promise<IColumnInfo[]> {
     const query = `
-      SELECT 
+      SELECT
         c.name as columnName,
         c.column_id as ordinalPosition,
         TYPE_NAME(c.user_type_id) as dataType,
-        CASE 
+        CASE
           WHEN TYPE_NAME(c.user_type_id) IN ('nchar', 'nvarchar') THEN c.max_length / 2
           WHEN TYPE_NAME(c.user_type_id) IN ('char', 'varchar', 'binary', 'varbinary') THEN c.max_length
           ELSE NULL
@@ -290,35 +160,20 @@ export class QueryExecutor {
     `;
 
     try {
-      const pool = await this.connectionManager.getPool(profileName);
-      const result = await pool
+      const result = await this.pool
         .request()
         .input('schema', sql.VarChar, schemaName)
         .input('table', sql.VarChar, tableName)
         .query(query);
-
       return result.recordset || [];
     } catch (error) {
       throw createFriendlyError(error);
     }
   }
 
-  /**
-   * Get table schema information (legacy - kept for compatibility)
-   */
-  async getTableSchema(
-    profileName: string,
-    schemaName: string,
-    tableName: string
-  ): Promise<Array<{
-    column: string;
-    dataType: string;
-    maxLength: number | null;
-    isNullable: boolean;
-    isPrimaryKey: boolean;
-  }>> {
+  async getTableSchema(schemaName: string, tableName: string): Promise<IColumnBasicInfo[]> {
     const query = `
-      SELECT 
+      SELECT
         c.name as [column],
         t.name as dataType,
         c.max_length as maxLength,
@@ -339,105 +194,20 @@ export class QueryExecutor {
     `;
 
     try {
-      const pool = await this.connectionManager.getPool(profileName);
-      const result = await pool
+      const result = await this.pool
         .request()
         .input('schema', sql.VarChar, schemaName)
         .input('table', sql.VarChar, tableName)
         .query(query);
-
       return result.recordset || [];
     } catch (error) {
       throw createFriendlyError(error);
     }
   }
 
-  /**
-   * Get preview of table data
-   */
-  async getTablePreview(
-    profileName: string,
-    schemaName: string,
-    tableName: string,
-    limit: number = 10
-  ): Promise<QueryResult> {
-    // Validate limit
-    if (limit < 1 || limit > 100) {
-      throw new Error('Limit must be between 1 and 100');
-    }
-
-    const query = `SELECT TOP (@limit) * FROM [${schemaName}].[${tableName}]`;
-
-    try {
-      const pool = await this.connectionManager.getPool(profileName);
-      const request = pool.request().input('limit', sql.Int, limit);
-      const result = await request.query(query);
-
-      const columns = result.recordset.columns
-        ? Object.keys(result.recordset.columns)
-        : [];
-
-      return {
-        rows: result.recordset || [],
-        rowCount: result.recordset?.length || 0,
-        columns,
-      };
-    } catch (error) {
-      throw createFriendlyError(error);
-    }
-  }
-
-  /**
-   * Get database information
-   */
-  async getDatabaseInfo(profileName: string): Promise<{
-    databaseName: string;
-    serverVersion: string;
-    compatibilityLevel: number;
-  }> {
-    const query = `
-      SELECT 
-        DB_NAME() as databaseName,
-        @@VERSION as serverVersion,
-        compatibility_level as compatibilityLevel
-      FROM sys.databases 
-      WHERE name = DB_NAME()
-    `;
-
-    try {
-      const pool = await this.connectionManager.getPool(profileName);
-      const result = await pool.request().query(query);
-      return result.recordset[0];
-    } catch (error) {
-      throw createFriendlyError(error);
-    }
-  }
-
-  /**
-   * Get foreign key relationships for a table
-   * Returns both outgoing (this table references others) and incoming (others reference this table)
-   */
-  async getTableRelations(
-    profileName: string,
-    schemaName: string,
-    tableName: string
-  ): Promise<{
-    outgoing: Array<{
-      foreignKeyName: string;
-      referencedSchema: string;
-      referencedTable: string;
-      columns: Array<{ fromColumn: string; toColumn: string }>;
-    }>;
-    incoming: Array<{
-      foreignKeyName: string;
-      referencingSchema: string;
-      referencingTable: string;
-      columns: Array<{ fromColumn: string; toColumn: string }>;
-    }>;
-  }> {
-    // Query for outgoing foreign keys (this table references other tables)
+  async getRelationships(schemaName: string, tableName: string): Promise<IRelationships> {
     const outgoingQuery = `
-      SELECT 
+      SELECT
         fk.name as foreignKeyName,
         SCHEMA_NAME(ref_t.schema_id) as referencedSchema,
         ref_t.name as referencedTable,
@@ -449,14 +219,13 @@ export class QueryExecutor {
       INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
       INNER JOIN sys.columns col ON fkc.parent_object_id = col.object_id AND fkc.parent_column_id = col.column_id
       INNER JOIN sys.columns ref_col ON fkc.referenced_object_id = ref_col.object_id AND fkc.referenced_column_id = ref_col.column_id
-      WHERE SCHEMA_NAME(t.schema_id) = @schema 
+      WHERE SCHEMA_NAME(t.schema_id) = @schema
         AND t.name = @table
       ORDER BY fk.name, fkc.constraint_column_id
     `;
 
-    // Query for incoming foreign keys (other tables reference this table)
     const incomingQuery = `
-      SELECT 
+      SELECT
         fk.name as foreignKeyName,
         SCHEMA_NAME(t.schema_id) as referencingSchema,
         t.name as referencingTable,
@@ -468,21 +237,18 @@ export class QueryExecutor {
       INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
       INNER JOIN sys.columns col ON fkc.parent_object_id = col.object_id AND fkc.parent_column_id = col.column_id
       INNER JOIN sys.columns ref_col ON fkc.referenced_object_id = ref_col.object_id AND fkc.referenced_column_id = ref_col.column_id
-      WHERE SCHEMA_NAME(ref_t.schema_id) = @schema 
+      WHERE SCHEMA_NAME(ref_t.schema_id) = @schema
         AND ref_t.name = @table
       ORDER BY fk.name, fkc.constraint_column_id
     `;
 
     try {
-      const pool = await this.connectionManager.getPool(profileName);
-
-      // Execute both queries in parallel
       const [outgoingResult, incomingResult] = await Promise.all([
-        pool.request()
+        this.pool.request()
           .input('schema', sql.VarChar, schemaName)
           .input('table', sql.VarChar, tableName)
           .query(outgoingQuery),
-        pool.request()
+        this.pool.request()
           .input('schema', sql.VarChar, schemaName)
           .input('table', sql.VarChar, tableName)
           .query(incomingQuery),
@@ -543,26 +309,9 @@ export class QueryExecutor {
     }
   }
 
-  /**
-   * Get all indexes for a table
-   */
-  async getTableIndexes(
-    profileName: string,
-    schemaName: string,
-    tableName: string
-  ): Promise<Array<{
-    indexName: string;
-    type: string;
-    isUnique: boolean;
-    isPrimaryKey: boolean;
-    isUniqueConstraint: boolean;
-    isDisabled: boolean;
-    filterDefinition: string | null;
-    keyColumns: Array<{ columnName: string; isDescending: boolean; keyOrdinal: number }>;
-    includedColumns: string[];
-  }>> {
+  async getIndexes(schemaName: string, tableName: string): Promise<IIndexInfo[]> {
     const query = `
-      SELECT 
+      SELECT
         i.name as indexName,
         i.type_desc as [type],
         i.is_unique as isUnique,
@@ -579,32 +328,21 @@ export class QueryExecutor {
       INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
       LEFT JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
       LEFT JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-      WHERE s.name = @schema 
+      WHERE s.name = @schema
         AND t.name = @table
         AND i.type > 0  -- Exclude heaps (type = 0)
       ORDER BY i.name, ic.key_ordinal, ic.index_column_id
     `;
 
     try {
-      const pool = await this.connectionManager.getPool(profileName);
-      const result = await pool
+      const result = await this.pool
         .request()
         .input('schema', sql.VarChar, schemaName)
         .input('table', sql.VarChar, tableName)
         .query(query);
 
       // Group by index name
-      const indexMap = new Map<string, {
-        indexName: string;
-        type: string;
-        isUnique: boolean;
-        isPrimaryKey: boolean;
-        isUniqueConstraint: boolean;
-        isDisabled: boolean;
-        filterDefinition: string | null;
-        keyColumns: Array<{ columnName: string; isDescending: boolean; keyOrdinal: number }>;
-        includedColumns: string[];
-      }>();
+      const indexMap = new Map<string, IIndexInfo>();
 
       for (const row of result.recordset) {
         if (!indexMap.has(row.indexName)) {
@@ -647,10 +385,29 @@ export class QueryExecutor {
     }
   }
 
-  /**
-   * Get estimated execution plan for a query (does not execute the query)
-   * Uses SET SHOWPLAN_XML to get the plan without execution cost
-   * Note: SET SHOWPLAN_XML returns the plan without executing the query
-   */
-}
+  async getDatabaseInfo(): Promise<IDatabaseInfo> {
+    const query = `
+      SELECT
+        DB_NAME() as databaseName,
+        @@VERSION as serverVersion,
+        compatibility_level as compatibilityLevel
+      FROM sys.databases
+      WHERE name = DB_NAME()
+    `;
 
+    try {
+      const result = await this.pool.request().query(query);
+      return result.recordset[0];
+    } catch (error) {
+      throw createFriendlyError(error);
+    }
+  }
+
+  async close(): Promise<void> {
+    try {
+      await this.pool.close();
+    } catch (error) {
+      console.error('Error closing SQL Server pool:', error);
+    }
+  }
+}

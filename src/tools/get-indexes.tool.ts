@@ -7,7 +7,7 @@ import { BaseTool } from '../core/base-tool.js';
  */
 export class GetIndexesTool extends BaseTool {
   readonly name = 'get-indexes';
-  readonly description = 'Get all indexes for a SQL Server table including clustered/non-clustered indexes, primary keys, unique constraints, key columns, included columns, filter definitions, and index statistics.';
+  readonly description = 'Get all indexes for a table including clustered/non-clustered indexes, primary keys, unique constraints, key columns, included columns, filter definitions, and index statistics.';
 
   readonly inputSchema = z.object({
     profile: z.string().describe('Connection profile name'),
@@ -19,7 +19,8 @@ export class GetIndexesTool extends BaseTool {
     const validatedInput = this.validateInput(input);
     const { profile, schema, table } = validatedInput;
 
-    const indexes = await this.queryExecutor.getTableIndexes(profile, schema, table);
+    const driver = await this.getDriver(profile);
+    const indexes = await driver.getIndexes(schema, table);
 
     return {
       success: true,

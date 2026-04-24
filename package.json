@@ -1,7 +1,7 @@
 {
-  "name": "sqlserver-mcp",
-  "version": "1.0.0",
-  "description": "SQL Server MCP Server - A secure, read-only Model Context Protocol server for SQL Server",
+  "name": "database-mcp",
+  "version": "2.0.0",
+  "description": "Database MCP Server - A secure, read-only Model Context Protocol server for SQL Server and PostgreSQL",
   "main": "build/index.js",
   "type": "module",
   "engines": {
@@ -21,6 +21,9 @@
     "mcp",
     "model-context-protocol",
     "sql-server",
+    "postgresql",
+    "postgres",
+    "database",
     "cursor",
     "ai"
   ],
@@ -29,13 +32,14 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "mssql": "^11.0.0",
+    "postgres": "^3.4.9",
     "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/mssql": "^9.1.0",
     "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^1.6.0",
     "typescript": "^5.7.0",
-    "vitest": "^1.6.0",
-    "@vitest/coverage-v8": "^1.6.0"
+    "vitest": "^1.6.0"
   }
 }

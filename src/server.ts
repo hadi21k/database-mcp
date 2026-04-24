@@ -2,20 +2,18 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { ConnectionManager } from './database/connection-manager.js';
-import { QueryExecutor } from './database/query-executor.js';
 import { ToolRegistry } from './core/tool-registry.js';
 import { ResourceRegistry } from './core/resource-registry.js';
-import { ListSchemasTool, ListTablesTool, DescribeTableTool, GetRelationshipsTool, GetIndexesTool, RunSelectQueryTool } from './tools/index.js';
+import { ListSchemasTool, ListTablesTool, DescribeTableTool, GetRelationshipsTool, GetIndexesTool, RunSelectQueryTool, ExplainQueryTool, EstimateCostTool, ListMaterializedViewsTool, ListExtensionsTool, ListEnumsTool } from './tools/index.js';
 import { TableSchemaResource, DatabaseInfoResource, ConnectionProfilesResource } from './resources/index.js';
 import { ServerConfig } from './config/types.js';
 
 /**
- * SQL Server MCP Server
+ * Multi-Database MCP Server
  */
 export class SqlServerMcpServer {
   private server: McpServer;
   private connectionManager: ConnectionManager;
-  private queryExecutor: QueryExecutor;
   private toolRegistry: ToolRegistry;
   private resourceRegistry: ResourceRegistry;
 
@@ -27,7 +25,6 @@ export class SqlServerMcpServer {
 
     // Initialize managers
     this.connectionManager = new ConnectionManager();
-    this.queryExecutor = new QueryExecutor(this.connectionManager);
     this.toolRegistry = new ToolRegistry();
     this.resourceRegistry = new ResourceRegistry();
 
@@ -55,17 +52,22 @@ export class SqlServerMcpServer {
    */
   private registerBuiltins(): void {
     // Register tools
-    this.toolRegistry.register(new ListSchemasTool(this.connectionManager, this.queryExecutor));
-    this.toolRegistry.register(new ListTablesTool(this.connectionManager, this.queryExecutor));
-    this.toolRegistry.register(new DescribeTableTool(this.connectionManager, this.queryExecutor));
-    this.toolRegistry.register(new GetRelationshipsTool(this.connectionManager, this.queryExecutor));
-    this.toolRegistry.register(new GetIndexesTool(this.connectionManager, this.queryExecutor));
-    this.toolRegistry.register(new RunSelectQueryTool(this.connectionManager, this.queryExecutor));
+    this.toolRegistry.register(new ListSchemasTool(this.connectionManager));
+    this.toolRegistry.register(new ListTablesTool(this.connectionManager));
+    this.toolRegistry.register(new DescribeTableTool(this.connectionManager));
+    this.toolRegistry.register(new GetRelationshipsTool(this.connectionManager));
+    this.toolRegistry.register(new GetIndexesTool(this.connectionManager));
+    this.toolRegistry.register(new RunSelectQueryTool(this.connectionManager));
+    this.toolRegistry.register(new ExplainQueryTool(this.connectionManager));
+    this.toolRegistry.register(new EstimateCostTool(this.connectionManager));
+    this.toolRegistry.register(new ListMaterializedViewsTool(this.connectionManager));
+    this.toolRegistry.register(new ListExtensionsTool(this.connectionManager));
+    this.toolRegistry.register(new ListEnumsTool(this.connectionManager));
 
     // Register resources
-    this.resourceRegistry.register(new TableSchemaResource(this.connectionManager, this.queryExecutor));
-    this.resourceRegistry.register(new DatabaseInfoResource(this.connectionManager, this.queryExecutor));
-    this.resourceRegistry.register(new ConnectionProfilesResource(this.connectionManager, this.queryExecutor));
+    this.resourceRegistry.register(new TableSchemaResource(this.connectionManager));
+    this.resourceRegistry.register(new DatabaseInfoResource(this.connectionManager));
+    this.resourceRegistry.register(new ConnectionProfilesResource(this.connectionManager));
   }
 
   /**
@@ -77,7 +79,7 @@ export class SqlServerMcpServer {
       'list-schemas',
       {
         title: 'List Schemas',
-        description: 'List all schemas in the SQL Server database with owner information and table counts. Excludes system schemas by default.',
+        description: 'List all schemas in the database with owner information and table counts. Excludes system schemas by default.',
         inputSchema: {
           profile: z.string().describe('Connection profile name'),
           includeSystem: z.boolean().optional().describe('Include system schemas (default: false)'),
@@ -121,7 +123,7 @@ export class SqlServerMcpServer {
       'list-tables',
       {
         title: 'List Tables',
-        description: 'List all tables in the SQL Server database with schema, row counts, and type information (user tables only, excludes system tables).',
+        description: 'List all tables in the database with schema, row counts, and type information (user tables only, excludes system tables).',
         inputSchema: {
           profile: z.string().describe('Connection profile name'),
           schema: z.string().optional().describe('Optional schema filter (e.g., "dbo"). If not provided, returns tables from all schemas'),
@@ -165,7 +167,7 @@ export class SqlServerMcpServer {
       'describe-table',
       {
         title: 'Describe Table',
-        description: 'Get detailed schema information for a SQL Server table including columns, data types, nullability, primary keys, defaults, identity columns, computed columns, and column descriptions.',
+        description: 'Get detailed schema information for a table including columns, data types, nullability, primary keys, defaults, identity columns, computed columns, and column descriptions.',
         inputSchema: {
           profile: z.string().describe('Connection profile name'),
           schema: z.string().describe('Schema name (e.g., "dbo")'),
@@ -210,7 +212,7 @@ export class SqlServerMcpServer {
       'get-relationships',
       {
         title: 'Get Relationships',
-        description: 'Get foreign key relationships for a SQL Server table. Returns both outgoing relationships (this table references other tables) and incoming relationships (other tables reference this table) with column mappings and suggested JOIN syntax.',
+        description: 'Get foreign key relationships for a table. Returns both outgoing relationships (this table references other tables) and incoming relationships (other tables reference this table) with column mappings and suggested JOIN syntax.',
         inputSchema: {
           profile: z.string().describe('Connection profile name'),
           schema: z.string().describe('Schema name (e.g., "dbo")'),
@@ -255,7 +257,7 @@ export class SqlServerMcpServer {
       'get-indexes',
       {
         title: 'Get Indexes',
-        description: 'Get all indexes for a SQL Server table including clustered/non-clustered indexes, primary keys, unique constraints, key columns, included columns, filter definitions, and index statistics.',
+        description: 'Get all indexes for a table including clustered/non-clustered indexes, primary keys, unique constraints, key columns, included columns, filter definitions, and index statistics.',
         inputSchema: {
           profile: z.string().describe('Connection profile name'),
           schema: z.string().describe('Schema name (e.g., "dbo")'),
@@ -300,7 +302,7 @@ export class SqlServerMcpServer {
       'run-select-query',
       {
         title: 'Run Select Query',
-        description: 'Execute a SELECT query against a SQL Server database with optional parameters. Only SELECT queries are allowed for security. Results are automatically limited to prevent excessive data transfer.',
+        description: 'Execute a SELECT query against a database with optional parameters. Only SELECT queries are allowed for security. Results are automatically limited to prevent excessive data transfer.',
         inputSchema: {
           profile: z.string().describe('Connection profile name'),
           query: z.string().describe('SQL SELECT query to execute'),
@@ -346,7 +348,7 @@ export class SqlServerMcpServer {
       'explain-query',
       {
         title: 'Explain Query',
-        description: 'Get the estimated execution plan for a SQL Server query without executing it. Returns the execution plan in XML format with operator details, estimated costs, and row counts. Useful for query optimization and understanding how SQL Server will execute the query.',
+        description: 'Get the estimated execution plan for a query without executing it. Returns the execution plan with operator details, estimated costs, and row counts. Useful for query optimization.',
         inputSchema: {
           profile: z.string().describe('Connection profile name'),
           query: z.string().describe('SQL SELECT query to analyze'),
@@ -391,7 +393,7 @@ export class SqlServerMcpServer {
       'estimate-cost',
       {
         title: 'Estimate Cost',
-        description: 'Estimate the execution cost for a SQL Server query. Returns estimated cost, row counts, operator types, and other performance metrics extracted from the execution plan. Useful for comparing query performance and identifying expensive operations.',
+        description: 'Estimate the execution cost for a query. Returns estimated cost, row counts, operator types, and other performance metrics. Useful for comparing query performance.',
         inputSchema: {
           profile: z.string().describe('Connection profile name'),
           query: z.string().describe('SQL SELECT query to analyze'),
@@ -430,8 +432,139 @@ export class SqlServerMcpServer {
         }
       }
     );
-  }
 
+    // Register list-materialized-views tool (PostgreSQL only)
+    this.server.registerTool(
+      'list-materialized-views',
+      {
+        title: 'List Materialized Views',
+        description: 'List materialized views in a PostgreSQL database with schema, definition, size, and population status. PostgreSQL only.',
+        inputSchema: {
+          profile: z.string().describe('Connection profile name'),
+          schema: z.string().optional().describe('Optional schema filter. If not provided, returns materialized views from all schemas.'),
+        },
+      },
+      async (args: any) => {
+        try {
+          const tool = this.toolRegistry.get('list-materialized-views');
+          if (!tool) throw new Error('List materialized views tool not found');
+
+          const result = await tool.execute(args);
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          const errorMessage = JSON.stringify({
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          }, null, 2);
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: errorMessage,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+    );
+
+    // Register list-extensions tool (PostgreSQL only)
+    this.server.registerTool(
+      'list-extensions',
+      {
+        title: 'List Extensions',
+        description: 'List installed and available PostgreSQL extensions with version information. PostgreSQL only.',
+        inputSchema: {
+          profile: z.string().describe('Connection profile name'),
+          installedOnly: z.boolean().optional().describe('Only show installed extensions (default: false, shows both installed and available)'),
+        },
+      },
+      async (args: any) => {
+        try {
+          const tool = this.toolRegistry.get('list-extensions');
+          if (!tool) throw new Error('List extensions tool not found');
+
+          const result = await tool.execute(args);
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          const errorMessage = JSON.stringify({
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          }, null, 2);
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: errorMessage,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+    );
+
+    // Register list-enums tool (PostgreSQL only)
+    this.server.registerTool(
+      'list-enums',
+      {
+        title: 'List Enums',
+        description: 'List user-defined enum types with their allowed values. PostgreSQL only.',
+        inputSchema: {
+          profile: z.string().describe('Connection profile name'),
+          schema: z.string().optional().describe('Optional schema filter. If not provided, returns enums from all user schemas.'),
+        },
+      },
+      async (args: any) => {
+        try {
+          const tool = this.toolRegistry.get('list-enums');
+          if (!tool) throw new Error('List enums tool not found');
+
+          const result = await tool.execute(args);
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          const errorMessage = JSON.stringify({
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          }, null, 2);
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: errorMessage,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+    );
+  }
 
   /**
    * Start the MCP server with stdio transport

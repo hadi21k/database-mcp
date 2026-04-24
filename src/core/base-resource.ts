@@ -1,5 +1,5 @@
 import { ConnectionManager } from '../database/connection-manager.js';
-import { QueryExecutor } from '../database/query-executor.js';
+import type { IDatabaseDriver } from '../database/interfaces/database-driver.js';
 
 /**
  * Base class for all MCP resources
@@ -11,15 +11,19 @@ export abstract class BaseResource {
   abstract readonly description: string;
   abstract readonly mimeType: string;
 
-  constructor(
-    protected connectionManager: ConnectionManager,
-    protected queryExecutor: QueryExecutor
-  ) {}
+  constructor(protected connectionManager: ConnectionManager) {}
 
   /**
    * Get the resource content
    */
   abstract getContent(uri: string): Promise<string>;
+
+  /**
+   * Get a database driver for the given profile
+   */
+  protected async getDriver(profile: string): Promise<IDatabaseDriver> {
+    return this.connectionManager.getDriver(profile);
+  }
 
   /**
    * Check if this resource matches a URI

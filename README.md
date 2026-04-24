@@ -1,283 +1,241 @@
-# SQL Server MCP Server
+# Database MCP Server
 
-A secure, read-only Model Context Protocol (MCP) server that enables AI assistants like Cursor to safely query and explore SQL Server databases.
+A secure, read-only Model Context Protocol (MCP) server that enables AI assistants (Claude Code, Cursor, etc.) to safely query and explore SQL Server and PostgreSQL databases.
 
-## 🎯 What is this?
+## What is this?
 
-This MCP server acts as a bridge between Cursor AI and your SQL Server databases. It provides safe, read-only access so AI can help you understand your database schema, query data, and discover relationships—all without risking data modification.
+This MCP server acts as a bridge between AI assistants and your databases. It provides safe, read-only access so AI can help you understand your database schema, query data, and discover relationships — all without risking data modification.
 
-## ✨ Features
+## Features
 
-- 🔒 **Read-Only by Design** - Only SELECT queries allowed, preventing accidental data changes
-- 🔐 **Secure by Default** - SQL injection prevention, parameterized queries, encrypted connections
-- 📊 **Multiple Connection Profiles** - Connect to multiple databases (local, staging, production)
-- 🔗 **Relationship Discovery** - Automatically discover foreign key relationships between tables
-- ⚡ **Safety Features** - Automatic row limiting, query timeouts, cross-database blocking
-- 🧩 **Extensible Architecture** - Easy to add custom tools and resources
+- **Read-Only by Design** — Only SELECT queries allowed, preventing accidental data changes
+- **Multi-Database** — Supports both SQL Server and PostgreSQL
+- **Multiple Profiles** — Connect to multiple databases simultaneously (local, staging, production)
+- **Relationship Discovery** — Automatically discover foreign key relationships between tables
+- **Safety Features** — Automatic row limiting, query validation, cross-database blocking
+- **PostgreSQL Extras** — EXPLAIN plans, materialized views, extensions, enum types
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
-- Node.js 18+ 
-- SQL Server (local or remote)
-- Cursor IDE
+- Node.js 18+
+- SQL Server and/or PostgreSQL database
+- Claude Code or Cursor IDE
 
 ### Installation
 
 ```bash
-# Clone or download the project
 cd sqlserver-mcp
-
-# Install dependencies
 npm install
-
-# Build the project
 npm run build
 ```
 
-### Configuration
+### Add to Your Project
 
-1. **Create `config.json`** in the project root:
+Add a `.mcp.json` file to the root of any project where you want database access:
 
-```json
-{
-  "local": {
-    "server": "localhost",
-    "database": "MyDatabase",
-    "user": "readonly_user",
-    "password": "your_password",
-    "options": {
-      "encrypt": false,
-      "trustServerCertificate": true
-    }
-  },
-  "production": {
-    "server": "prod.database.windows.net",
-    "database": "ProdDB",
-    "user": "readonly_user",
-    "password": "your_prod_password",
-    "options": {
-      "encrypt": true,
-      "trustServerCertificate": false,
-      "applicationIntent": "ReadOnly"
-    }
-  }
-}
-```
-
-> ⚠️ **Important:** `config.json` is in `.gitignore` - never commit credentials!
-
-2. **Configure Cursor MCP Settings**
-
-Open Cursor Settings → MCP Servers and add:
-
+**PostgreSQL:**
 ```json
 {
   "mcpServers": {
-    "sqlserver": {
+    "database": {
       "command": "node",
       "args": ["/absolute/path/to/sqlserver-mcp/build/index.js"],
       "env": {
-        "SQLSERVER_CONFIG_FILE": "/absolute/path/to/sqlserver-mcp/config.json"
+        "SQLSERVER_CONNECTIONS": "{\"mydb\":{\"databaseType\":\"postgresql\",\"connectionString\":\"postgresql://user:pass@localhost:5432/dbname\"}}"
       }
     }
   }
 }
 ```
 
-Replace `/absolute/path/to/sqlserver-mcp` with your actual installation path.
-
-3. **Restart Cursor**
-
-That's it! Cursor AI can now query your databases.
-
-## 📖 Usage Examples
-
-### Query Data
-
-Ask Cursor:
-- *"Show me the top 10 users from the local database"*
-- *"What are the recent orders in production?"*
-- *"Find all products with price greater than $100"*
-
-### Explore Schema
-
-- *"List all tables in the production database"*
-- *"Show me the schema for the Users table"*
-- *"What are the relationships for the Orders table?"*
-
-### Discover Relationships
-
-- *"How is the Orders table related to other tables?"*
-- *"Show me foreign keys for the Products table"*
-
-## 🛠️ Available Tools
-
-The MCP server provides these tools for AI to use:
-
-| Tool | Description |
-|------|-------------|
-| `query-data` | Execute SELECT queries with automatic safety limits |
-| `list-tables` | List all tables with row counts |
-| `get-table-preview` | Preview sample data from a table |
-| `get-table-relations` | Discover foreign key relationships |
-
-## 🔒 Security Features
-
-### Automatic Safety
-
-- **Row Limiting**: Queries automatically limited to 1000 rows (configurable)
-- **Query Timeout**: 30 seconds default (configurable per profile)
-- **Cross-Database Blocking**: Prevents queries accessing other databases
-- **Read-Only Enforcement**: Only SELECT statements allowed
-- **SQL Injection Prevention**: All inputs parameterized
-
-### Best Practices
-
-1. **Use Read-Only Database Users**
-   ```sql
-   CREATE USER readonly_user WITH PASSWORD 'secure_password';
-   GRANT SELECT ON SCHEMA::dbo TO readonly_user;
-   ```
-
-2. **Enable Encryption** (especially for production)
-   ```json
-   "options": {
-     "encrypt": true,
-     "trustServerCertificate": false
-   }
-   ```
-
-3. **Set Application Intent** (for Azure SQL)
-   ```json
-   "options": {
-     "applicationIntent": "ReadOnly"
-   }
-   ```
-
-## 📁 Project Structure
-
-```
-sqlserver-mcp/
-├── src/
-│   ├── tools/          # MCP tools (query-data, list-tables, etc.)
-│   ├── resources/      # MCP resources (schema info, etc.)
-│   ├── database/       # Connection management & query execution
-│   ├── config/         # Configuration loading
-│   └── utils/          # Validation & error handling
-├── tests/              # Unit tests
-├── config.json         # Your database connections (not committed)
-└── package.json
-```
-
-## 🧪 Testing
-
-```bash
-# Run all tests
-npm test
-
-# Watch mode
-npm run test:watch
-
-# Coverage report
-npm run test:coverage
-```
-
-## 🔧 Development
-
-```bash
-# Build TypeScript
-npm run build
-
-# Watch mode for development
-npm run dev
-
-# Start server manually
-npm start
-```
-
-## 📝 Configuration Options
-
-### Connection Profile Options
-
+**SQL Server:**
 ```json
 {
-  "profile_name": {
-    "server": "hostname or IP",
-    "database": "database_name",
-    "user": "username",
-    "password": "password",
-    "port": 1433,                    // Optional, defaults to 1433
-    "options": {
-      "encrypt": true,               // Enable TLS encryption
-      "trustServerCertificate": false, // Verify certificate
-      "applicationIntent": "ReadOnly", // Azure SQL read routing
-      "requestTimeout": 30000,        // Query timeout in ms
-      "connectionTimeout": 15000      // Connection timeout in ms
+  "mcpServers": {
+    "database": {
+      "command": "node",
+      "args": ["/absolute/path/to/sqlserver-mcp/build/index.js"],
+      "env": {
+        "SQLSERVER_CONNECTIONS": "{\"mydb\":{\"server\":\"localhost\",\"database\":\"MyDB\",\"user\":\"sa\",\"password\":\"yourpassword\",\"options\":{\"encrypt\":false,\"trustServerCertificate\":true}}}"
+      }
     }
   }
 }
 ```
 
-## 🎓 How It Works
+**Multiple databases:**
+```json
+{
+  "mcpServers": {
+    "database": {
+      "command": "node",
+      "args": ["/absolute/path/to/sqlserver-mcp/build/index.js"],
+      "env": {
+        "SQLSERVER_CONNECTIONS": "{\"pg_local\":{\"databaseType\":\"postgresql\",\"connectionString\":\"postgresql://user:pass@localhost:5432/appdb\"},\"sql_prod\":{\"server\":\"prod.server.com\",\"database\":\"ProdDB\",\"user\":\"readonly\",\"password\":\"pass\",\"options\":{\"encrypt\":true}}}"
+      }
+    }
+  }
+}
+```
 
-1. **Cursor AI** sends a request through the MCP protocol
-2. **MCP Server** validates the request and checks security
-3. **Query Executor** safely executes the query with limits
-4. **Results** are returned to Cursor AI in a structured format
+The profile name (e.g., `mydb`, `pg_local`) is what gets passed as the `profile` parameter to every tool call.
 
-All queries are:
-- ✅ Validated as read-only
-- ✅ Parameterized to prevent injection
-- ✅ Limited in row count and timeout
-- ✅ Sanitized for error messages
+### Alternative: Config File
 
-## 🐛 Troubleshooting
+Instead of inline JSON, you can use a config file:
 
-### "Cannot find module" error
-- Make sure you've run `npm run build`
-- Check the path in Cursor settings is absolute and correct
+```json
+{
+  "mcpServers": {
+    "database": {
+      "command": "node",
+      "args": ["/absolute/path/to/sqlserver-mcp/build/index.js"],
+      "env": {
+        "SQLSERVER_CONFIG_FILE": "/path/to/config.json"
+      }
+    }
+  }
+}
+```
 
-### "Unknown connection profile" error
-- Verify the profile name matches exactly in `config.json`
-- Check the profile name is spelled correctly in your query
+Where `config.json` contains:
+```json
+{
+  "local_pg": {
+    "databaseType": "postgresql",
+    "connectionString": "postgresql://user:pass@localhost:5432/mydb"
+  },
+  "local_sql": {
+    "server": "localhost",
+    "database": "MyDB",
+    "user": "sa",
+    "password": "yourpassword",
+    "options": {
+      "encrypt": false,
+      "trustServerCertificate": true
+    }
+  }
+}
+```
 
-### Connection timeout
-- Verify SQL Server is accessible from your machine
-- Check firewall rules allow connections
-- Increase `connectionTimeout` in config if needed
+Restart your IDE after adding or changing `.mcp.json`.
 
-### Query timeout
-- Simplify your query or add WHERE filters
-- Increase `requestTimeout` in config options
+## Available Tools
 
-## 📚 Learn More
+| Tool | Database | Description |
+|------|----------|-------------|
+| `list-schemas` | Both | List schemas with owner info and table counts |
+| `list-tables` | Both | List tables with row counts and type info |
+| `describe-table` | Both | Column details: types, nullability, PKs, defaults, identity |
+| `get-relationships` | Both | Foreign key relationships (outgoing and incoming) |
+| `get-indexes` | Both | Index details: type, columns, uniqueness, filters |
+| `run-select-query` | Both | Execute read-only SELECT queries with parameters |
+| `explain-query` | Both | Get estimated execution plan for a query |
+| `estimate-cost` | Both | Estimate query cost and row counts |
+| `list-materialized-views` | PostgreSQL | List materialized views with size and status |
+| `list-extensions` | PostgreSQL | List installed and available extensions |
+| `list-enums` | PostgreSQL | List user-defined enum types with values |
 
-- [Model Context Protocol](https://modelcontextprotocol.io/) - Official MCP documentation
-- [EXTENSIONS.md](./EXTENSIONS.md) - Guide for creating custom tools
-- [mssql Documentation](https://github.com/tediousjs/node-mssql) - SQL Server driver docs
+## Usage Examples
 
-## 🤝 Contributing
+Ask your AI assistant:
 
-This project follows SOLID principles and includes comprehensive tests. When adding features:
+- *"List all tables in the mydb database"*
+- *"Describe the Users table in mydb"*
+- *"Show me the relationships for the Orders table"*
+- *"Run this query on mydb: SELECT * FROM users WHERE active = true"*
+- *"Explain this query: SELECT u.*, o.total FROM users u JOIN orders o ON u.id = o.user_id"*
+- *"What extensions are installed on mydb?"*
 
-1. Create tests first
-2. Follow existing code patterns
-3. Ensure all tests pass
-4. Update documentation
+## Connection Profile Options
 
-## 📄 License
+### SQL Server
+```json
+{
+  "server": "hostname",
+  "database": "database_name",
+  "user": "username",
+  "password": "password",
+  "port": 1433,
+  "options": {
+    "encrypt": true,
+    "trustServerCertificate": false,
+    "applicationIntent": "ReadOnly",
+    "requestTimeout": 30000,
+    "connectionTimeout": 15000
+  }
+}
+```
 
-MIT License - feel free to use and modify as needed.
+### PostgreSQL (structured)
+```json
+{
+  "databaseType": "postgresql",
+  "server": "hostname",
+  "database": "database_name",
+  "user": "username",
+  "password": "password",
+  "port": 5432,
+  "pgOptions": {
+    "ssl": true,
+    "statement_timeout": 30000,
+    "application_name": "mcp-server"
+  }
+}
+```
 
-## ⚡ Quick Tips
+### PostgreSQL (connection string)
+```json
+{
+  "databaseType": "postgresql",
+  "connectionString": "postgresql://user:pass@host:5432/dbname?sslmode=require"
+}
+```
 
-- **Multiple Profiles**: Use descriptive names like `local_dev`, `staging`, `production`
-- **Security**: Always use read-only database users in production
-- **Performance**: Add indexes to frequently queried columns
-- **Debugging**: Check Cursor's MCP logs for detailed error messages
+When using `connectionString`, the `server`, `database`, `user`, and `password` fields are still required but can be set to placeholder values — the connection string takes precedence.
 
----
+## Security
 
-**Made with ❤️ for safer AI-database interactions**
+- **Read-only enforcement** — INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, EXEC, MERGE, GRANT, REVOKE are all blocked
+- **Automatic row limiting** — Queries limited to 1000 rows by default (max 10,000)
+- **Cross-database blocking** — Three-part names (database.schema.table) are rejected
+- **Parameter validation** — Only alphanumeric parameter names allowed
+- **Error sanitization** — Credentials, IPs, and file paths are masked in error output
+
+**Best practice:** Create a read-only database user for the MCP server.
+
+```sql
+-- PostgreSQL
+CREATE USER mcp_readonly WITH PASSWORD 'secure_password';
+GRANT CONNECT ON DATABASE mydb TO mcp_readonly;
+GRANT USAGE ON SCHEMA public TO mcp_readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_readonly;
+
+-- SQL Server
+CREATE LOGIN mcp_readonly WITH PASSWORD = 'secure_password';
+CREATE USER mcp_readonly FOR LOGIN mcp_readonly;
+EXEC sp_addrolemember 'db_datareader', 'mcp_readonly';
+```
+
+## Development
+
+```bash
+npm run build            # Compile TypeScript
+npm run dev              # Watch mode
+npm test                 # Run all tests
+npm run test:coverage    # Coverage report
+```
+
+## Troubleshooting
+
+**"Unknown connection profile"** — The profile name in your tool call doesn't match what's in the config. Check spelling.
+
+**"connect ECONNREFUSED"** — The database isn't running or the host/port is wrong. Verify the database is accessible.
+
+**"Cannot find module"** — Run `npm run build` first. Check the path in `.mcp.json` is absolute and correct.
+
+## License
+
+MIT

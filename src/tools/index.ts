@@ -4,3 +4,8 @@ export { DescribeTableTool } from './describe-table.tool.js';
 export { GetRelationshipsTool } from './get-relationships.tool.js';
 export { GetIndexesTool } from './get-indexes.tool.js';
 export { RunSelectQueryTool } from './run-select-query.tool.js';
+export { ExplainQueryTool } from './explain-query.tool.js';
+export { EstimateCostTool } from './estimate-cost.tool.js';
+export { ListMaterializedViewsTool } from './list-materialized-views.tool.js';
+export { ListExtensionsTool } from './list-extensions.tool.js';
+export { ListEnumsTool } from './list-enums.tool.js';

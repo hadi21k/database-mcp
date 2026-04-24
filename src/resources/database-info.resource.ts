@@ -2,12 +2,12 @@ import { BaseResource } from '../core/base-resource.js';
 
 /**
  * Resource: Database information
- * URI pattern: sqlserver:///{profile}/info
+ * URI pattern: db:///{profile}/info
  */
 export class DatabaseInfoResource extends BaseResource {
-  readonly uriTemplate = 'sqlserver:///{profile}/info';
+  readonly uriTemplate = 'db:///{profile}/info';
   readonly name = 'Database Info';
-  readonly description = 'Provides general information about the SQL Server database including name, version, and available tables.';
+  readonly description = 'Provides general information about the database including name, version, and available tables.';
   readonly mimeType = 'application/json';
 
   async getContent(uri: string): Promise<string> {
@@ -15,12 +15,13 @@ export class DatabaseInfoResource extends BaseResource {
     const { profile } = params;
 
     if (!profile) {
-      throw new Error('Invalid URI format. Expected: sqlserver:///{profile}/info');
+      throw new Error('Invalid URI format. Expected: db:///{profile}/info');
     }
 
+    const driver = await this.getDriver(profile);
     const [dbInfo, tables] = await Promise.all([
-      this.queryExecutor.getDatabaseInfo(profile),
-      this.queryExecutor.listTables(profile),
+      driver.getDatabaseInfo(),
+      driver.listTables(),
     ]);
 
     const result = {

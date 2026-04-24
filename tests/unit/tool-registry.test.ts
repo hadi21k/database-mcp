@@ -3,7 +3,6 @@ import { ToolRegistry } from '../../src/core/tool-registry.js';
 import { BaseTool } from '../../src/core/base-tool.js';
 import { z } from 'zod';
 import { ConnectionManager } from '../../src/database/connection-manager.js';
-import { QueryExecutor } from '../../src/database/query-executor.js';
 
 // Mock tool for testing
 class MockTool extends BaseTool {
@@ -21,14 +20,12 @@ class MockTool extends BaseTool {
 describe('ToolRegistry', () => {
   let registry: ToolRegistry;
   let mockConnectionManager: ConnectionManager;
-  let mockQueryExecutor: QueryExecutor;
   let mockTool: MockTool;
 
   beforeEach(() => {
     registry = new ToolRegistry();
     mockConnectionManager = {} as ConnectionManager;
-    mockQueryExecutor = {} as QueryExecutor;
-    mockTool = new MockTool(mockConnectionManager, mockQueryExecutor);
+    mockTool = new MockTool(mockConnectionManager);
   });
 
   describe('register', () => {
@@ -39,7 +36,7 @@ describe('ToolRegistry', () => {
 
     it('should throw error when registering duplicate tool', () => {
       registry.register(mockTool);
-      
+
       expect(() => registry.register(mockTool))
         .toThrow('Tool "mock-tool" is already registered');
     });
@@ -53,8 +50,8 @@ describe('ToolRegistry', () => {
       }
 
       registry.register(mockTool);
-      registry.register(new AnotherTool(mockConnectionManager, mockQueryExecutor));
-      
+      registry.register(new AnotherTool(mockConnectionManager));
+
       expect(registry.getAll()).toHaveLength(2);
     });
   });
@@ -63,7 +60,7 @@ describe('ToolRegistry', () => {
     it('should retrieve registered tool', () => {
       registry.register(mockTool);
       const retrieved = registry.get('mock-tool');
-      
+
       expect(retrieved).toBe(mockTool);
       expect(retrieved?.name).toBe('mock-tool');
     });
@@ -104,10 +101,10 @@ describe('ToolRegistry', () => {
         async execute() { return {}; }
       }
 
-      registry.register(new Tool1(mockConnectionManager, mockQueryExecutor));
-      registry.register(new Tool2(mockConnectionManager, mockQueryExecutor));
+      registry.register(new Tool1(mockConnectionManager));
+      registry.register(new Tool2(mockConnectionManager));
       registry.register(mockTool);
-      
+
       const tools = registry.getAll();
       expect(tools).toHaveLength(3);
       expect(tools.map(t => t.name)).toContain('tool-1');
@@ -124,7 +121,7 @@ describe('ToolRegistry', () => {
     it('should return tool definitions', () => {
       registry.register(mockTool);
       const definitions = registry.getDefinitions();
-      
+
       expect(definitions).toHaveLength(1);
       expect(definitions[0]).toHaveProperty('name');
       expect(definitions[0]).toHaveProperty('description');
@@ -141,8 +138,8 @@ describe('ToolRegistry', () => {
       }
 
       registry.register(mockTool);
-      registry.register(new Tool1(mockConnectionManager, mockQueryExecutor));
-      
+      registry.register(new Tool1(mockConnectionManager));
+
       const definitions = registry.getDefinitions();
       expect(definitions).toHaveLength(2);
     });

@@ -1,19 +1,22 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ListSchemasTool } from '../../src/tools/list-schemas.tool.js';
-import { ConnectionManager } from '../../src/database/connection-manager.js';
-import { QueryExecutor } from '../../src/database/query-executor.js';
+import type { IDatabaseDriver } from '../../src/database/interfaces/database-driver.js';
 
 describe('ListSchemasTool', () => {
   let tool: ListSchemasTool;
-  let mockConnectionManager: ConnectionManager;
-  let mockQueryExecutor: QueryExecutor;
+  let mockDriver: IDatabaseDriver;
 
   beforeEach(() => {
-    mockConnectionManager = {} as ConnectionManager;
-    mockQueryExecutor = {
+    mockDriver = {
+      dialect: 'sqlserver',
       listSchemas: vi.fn(),
     } as any;
-    tool = new ListSchemasTool(mockConnectionManager, mockQueryExecutor);
+
+    const mockConnectionManager = {
+      getDriver: vi.fn().mockResolvedValue(mockDriver),
+    } as any;
+
+    tool = new ListSchemasTool(mockConnectionManager);
   });
 
   describe('Tool Properties', () => {
@@ -23,7 +26,6 @@ describe('ListSchemasTool', () => {
 
     it('should have descriptive description', () => {
       expect(tool.description).toContain('schemas');
-      expect(tool.description).toContain('SQL Server');
     });
 
     it('should have proper input schema', () => {
@@ -44,7 +46,7 @@ describe('ListSchemasTool', () => {
           { schemaName: 'hr', owner: 'hr_user', tableCount: 3, isSystemSchema: false },
         ];
 
-        vi.mocked(mockQueryExecutor.listSchemas).mockResolvedValue(mockSchemas);
+        vi.mocked(mockDriver.listSchemas).mockResolvedValue(mockSchemas);
 
         const result = await tool.execute({
           profile: 'test',
@@ -64,13 +66,13 @@ describe('ListSchemasTool', () => {
           { schemaName: 'sys', owner: '', tableCount: 0, isSystemSchema: true },
         ];
 
-        vi.mocked(mockQueryExecutor.listSchemas).mockResolvedValue(mockSchemas);
+        vi.mocked(mockDriver.listSchemas).mockResolvedValue(mockSchemas);
 
         const result = await tool.execute({
           profile: 'test',
         });
 
-        expect(mockQueryExecutor.listSchemas).toHaveBeenCalledWith('test', false);
+        expect(mockDriver.listSchemas).toHaveBeenCalledWith(false);
         expect(result.data.schemas).toHaveLength(2);
         expect(result.data.summary.userSchemas).toBe(1);
         expect(result.data.summary.systemSchemas).toBe(1);
@@ -83,14 +85,14 @@ describe('ListSchemasTool', () => {
           { schemaName: 'INFORMATION_SCHEMA', owner: '', tableCount: 0, isSystemSchema: true },
         ];
 
-        vi.mocked(mockQueryExecutor.listSchemas).mockResolvedValue(mockSchemas);
+        vi.mocked(mockDriver.listSchemas).mockResolvedValue(mockSchemas);
 
         const result = await tool.execute({
           profile: 'test',
           includeSystem: true,
         });
 
-        expect(mockQueryExecutor.listSchemas).toHaveBeenCalledWith('test', true);
+        expect(mockDriver.listSchemas).toHaveBeenCalledWith(true);
         expect(result.data.schemas).toHaveLength(3);
         expect(result.data.summary.systemSchemas).toBe(2);
       });
@@ -100,7 +102,7 @@ describe('ListSchemasTool', () => {
           { schemaName: 'empty_schema', owner: 'dbo', tableCount: 0, isSystemSchema: false },
         ];
 
-        vi.mocked(mockQueryExecutor.listSchemas).mockResolvedValue(mockSchemas);
+        vi.mocked(mockDriver.listSchemas).mockResolvedValue(mockSchemas);
 
         const result = await tool.execute({
           profile: 'test',
@@ -112,7 +114,7 @@ describe('ListSchemasTool', () => {
       });
 
       it('should handle empty schema list', async () => {
-        vi.mocked(mockQueryExecutor.listSchemas).mockResolvedValue([]);
+        vi.mocked(mockDriver.listSchemas).mockResolvedValue([]);
 
         const result = await tool.execute({
           profile: 'test',
@@ -131,7 +133,7 @@ describe('ListSchemasTool', () => {
           { schemaName: 'custom', owner: 'user1', tableCount: 5, isSystemSchema: false },
         ];
 
-        vi.mocked(mockQueryExecutor.listSchemas).mockResolvedValue(mockSchemas);
+        vi.mocked(mockDriver.listSchemas).mockResolvedValue(mockSchemas);
 
         const result = await tool.execute({
           profile: 'test',
@@ -151,7 +153,7 @@ describe('ListSchemasTool', () => {
       });
 
       it('should accept optional includeSystem parameter', async () => {
-        vi.mocked(mockQueryExecutor.listSchemas).mockResolvedValue([]);
+        vi.mocked(mockDriver.listSchemas).mockResolvedValue([]);
 
         await expect(
           tool.execute({ profile: 'test' })
@@ -159,20 +161,20 @@ describe('ListSchemasTool', () => {
       });
 
       it('should handle includeSystem as false explicitly', async () => {
-        vi.mocked(mockQueryExecutor.listSchemas).mockResolvedValue([]);
+        vi.mocked(mockDriver.listSchemas).mockResolvedValue([]);
 
         await tool.execute({
           profile: 'test',
           includeSystem: false,
         });
 
-        expect(mockQueryExecutor.listSchemas).toHaveBeenCalledWith('test', false);
+        expect(mockDriver.listSchemas).toHaveBeenCalledWith(false);
       });
     });
 
     describe('error handling', () => {
-      it('should propagate query executor errors', async () => {
-        vi.mocked(mockQueryExecutor.listSchemas).mockRejectedValue(
+      it('should propagate driver errors', async () => {
+        vi.mocked(mockDriver.listSchemas).mockRejectedValue(
           new Error('Database connection failed')
         );
 
@@ -184,7 +186,7 @@ describe('ListSchemasTool', () => {
       });
 
       it('should handle database access errors', async () => {
-        vi.mocked(mockQueryExecutor.listSchemas).mockRejectedValue(
+        vi.mocked(mockDriver.listSchemas).mockRejectedValue(
           new Error('Insufficient permissions')
         );
 

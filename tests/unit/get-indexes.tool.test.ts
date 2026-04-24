@@ -1,20 +1,23 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { GetIndexesTool } from '../../src/tools/get-indexes.tool.js';
-import { ConnectionManager } from '../../src/database/connection-manager.js';
-import { QueryExecutor } from '../../src/database/query-executor.js';
+import type { IDatabaseDriver } from '../../src/database/interfaces/database-driver.js';
 import { mockIndexes } from '../fixtures/table-data.js';
 
 describe('GetIndexesTool', () => {
   let tool: GetIndexesTool;
-  let mockConnectionManager: ConnectionManager;
-  let mockQueryExecutor: QueryExecutor;
+  let mockDriver: IDatabaseDriver;
 
   beforeEach(() => {
-    mockConnectionManager = {} as ConnectionManager;
-    mockQueryExecutor = {
-      getTableIndexes: vi.fn(),
+    mockDriver = {
+      dialect: 'sqlserver',
+      getIndexes: vi.fn(),
     } as any;
-    tool = new GetIndexesTool(mockConnectionManager, mockQueryExecutor);
+
+    const mockConnectionManager = {
+      getDriver: vi.fn().mockResolvedValue(mockDriver),
+    } as any;
+
+    tool = new GetIndexesTool(mockConnectionManager);
   });
 
   describe('Tool Properties', () => {
@@ -24,7 +27,6 @@ describe('GetIndexesTool', () => {
 
     it('should have descriptive description', () => {
       expect(tool.description).toContain('indexes');
-      expect(tool.description).toContain('SQL Server');
     });
 
     it('should have proper input schema', () => {
@@ -41,7 +43,7 @@ describe('GetIndexesTool', () => {
   describe('execute', () => {
     describe('with valid input', () => {
       it('should return indexes with summary', async () => {
-        vi.mocked(mockQueryExecutor.getTableIndexes).mockResolvedValue(mockIndexes);
+        vi.mocked(mockDriver.getIndexes).mockResolvedValue(mockIndexes);
 
         const result = await tool.execute({
           profile: 'test',
@@ -102,7 +104,7 @@ describe('GetIndexesTool', () => {
           },
         ];
 
-        vi.mocked(mockQueryExecutor.getTableIndexes).mockResolvedValue(indexesWithTypes);
+        vi.mocked(mockDriver.getIndexes).mockResolvedValue(indexesWithTypes);
 
         const result = await tool.execute({
           profile: 'test',
@@ -134,7 +136,7 @@ describe('GetIndexesTool', () => {
           },
         ];
 
-        vi.mocked(mockQueryExecutor.getTableIndexes).mockResolvedValue(indexesWithDisabled);
+        vi.mocked(mockDriver.getIndexes).mockResolvedValue(indexesWithDisabled);
 
         const result = await tool.execute({
           profile: 'test',
@@ -163,7 +165,7 @@ describe('GetIndexesTool', () => {
           },
         ];
 
-        vi.mocked(mockQueryExecutor.getTableIndexes).mockResolvedValue(indexWithIncluded);
+        vi.mocked(mockDriver.getIndexes).mockResolvedValue(indexWithIncluded);
 
         const result = await tool.execute({
           profile: 'test',
@@ -192,7 +194,7 @@ describe('GetIndexesTool', () => {
           },
         ];
 
-        vi.mocked(mockQueryExecutor.getTableIndexes).mockResolvedValue(filteredIndex);
+        vi.mocked(mockDriver.getIndexes).mockResolvedValue(filteredIndex);
 
         const result = await tool.execute({
           profile: 'test',
@@ -222,7 +224,7 @@ describe('GetIndexesTool', () => {
           },
         ];
 
-        vi.mocked(mockQueryExecutor.getTableIndexes).mockResolvedValue(compositeIndex);
+        vi.mocked(mockDriver.getIndexes).mockResolvedValue(compositeIndex);
 
         const result = await tool.execute({
           profile: 'test',
@@ -236,7 +238,7 @@ describe('GetIndexesTool', () => {
       });
 
       it('should handle table with no indexes', async () => {
-        vi.mocked(mockQueryExecutor.getTableIndexes).mockResolvedValue([]);
+        vi.mocked(mockDriver.getIndexes).mockResolvedValue([]);
 
         const result = await tool.execute({
           profile: 'test',
@@ -292,8 +294,8 @@ describe('GetIndexesTool', () => {
     });
 
     describe('error handling', () => {
-      it('should propagate query executor errors', async () => {
-        vi.mocked(mockQueryExecutor.getTableIndexes).mockRejectedValue(
+      it('should propagate driver errors', async () => {
+        vi.mocked(mockDriver.getIndexes).mockRejectedValue(
           new Error('Database connection failed')
         );
 
@@ -307,7 +309,7 @@ describe('GetIndexesTool', () => {
       });
 
       it('should handle non-existent tables gracefully', async () => {
-        vi.mocked(mockQueryExecutor.getTableIndexes).mockRejectedValue(
+        vi.mocked(mockDriver.getIndexes).mockRejectedValue(
           new Error('Table or view not found')
         );
 

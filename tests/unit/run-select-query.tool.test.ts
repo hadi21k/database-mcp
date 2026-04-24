@@ -1,20 +1,23 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { RunSelectQueryTool } from '../../src/tools/run-select-query.tool.js';
-import { ConnectionManager } from '../../src/database/connection-manager.js';
-import { QueryExecutor } from '../../src/database/query-executor.js';
+import type { IDatabaseDriver } from '../../src/database/interfaces/database-driver.js';
 import { mockQueryResult } from '../fixtures/table-data.js';
 
 describe('RunSelectQueryTool', () => {
   let tool: RunSelectQueryTool;
-  let mockConnectionManager: ConnectionManager;
-  let mockQueryExecutor: QueryExecutor;
+  let mockDriver: IDatabaseDriver;
 
   beforeEach(() => {
-    mockConnectionManager = {} as ConnectionManager;
-    mockQueryExecutor = {
-      executeQuerySafe: vi.fn(),
+    mockDriver = {
+      dialect: 'sqlserver',
+      executeQuery: vi.fn(),
     } as any;
-    tool = new RunSelectQueryTool(mockConnectionManager, mockQueryExecutor);
+
+    const mockConnectionManager = {
+      getDriver: vi.fn().mockResolvedValue(mockDriver),
+    } as any;
+
+    tool = new RunSelectQueryTool(mockConnectionManager);
   });
 
   describe('Tool Properties', () => {
@@ -24,7 +27,6 @@ describe('RunSelectQueryTool', () => {
 
     it('should have descriptive description', () => {
       expect(tool.description).toContain('SELECT query');
-      expect(tool.description).toContain('SQL Server');
     });
 
     it('should have proper input schema', () => {
@@ -43,7 +45,7 @@ describe('RunSelectQueryTool', () => {
   describe('execute', () => {
     describe('with valid input', () => {
       it('should execute query and return results', async () => {
-        vi.mocked(mockQueryExecutor.executeQuerySafe).mockResolvedValue(mockQueryResult);
+        vi.mocked(mockDriver.executeQuery).mockResolvedValue(mockQueryResult);
 
         const result = await tool.execute({
           profile: 'test',
@@ -60,22 +62,22 @@ describe('RunSelectQueryTool', () => {
       });
 
       it('should use default maxRows when not specified', async () => {
-        vi.mocked(mockQueryExecutor.executeQuerySafe).mockResolvedValue(mockQueryResult);
+        vi.mocked(mockDriver.executeQuery).mockResolvedValue(mockQueryResult);
 
         await tool.execute({
           profile: 'test',
           query: 'SELECT * FROM Users',
         });
 
-        expect(mockQueryExecutor.executeQuerySafe).toHaveBeenCalledWith(
-          'test',
+        expect(mockDriver.executeQuery).toHaveBeenCalledWith(
           'SELECT * FROM Users',
-          { maxRows: 1000 }
+          undefined,
+          1000
         );
       });
 
       it('should use custom maxRows when specified', async () => {
-        vi.mocked(mockQueryExecutor.executeQuerySafe).mockResolvedValue(mockQueryResult);
+        vi.mocked(mockDriver.executeQuery).mockResolvedValue(mockQueryResult);
 
         await tool.execute({
           profile: 'test',
@@ -83,16 +85,16 @@ describe('RunSelectQueryTool', () => {
           maxRows: 500,
         });
 
-        expect(mockQueryExecutor.executeQuerySafe).toHaveBeenCalledWith(
-          'test',
+        expect(mockDriver.executeQuery).toHaveBeenCalledWith(
           'SELECT * FROM Users',
-          { maxRows: 500 }
+          undefined,
+          500
         );
       });
 
-      it('should pass parameters to query executor', async () => {
+      it('should pass parameters to driver', async () => {
         const parameters = { userId: 123, status: 'active' };
-        vi.mocked(mockQueryExecutor.executeQuerySafe).mockResolvedValue(mockQueryResult);
+        vi.mocked(mockDriver.executeQuery).mockResolvedValue(mockQueryResult);
 
         await tool.execute({
           profile: 'test',
@@ -100,10 +102,10 @@ describe('RunSelectQueryTool', () => {
           parameters,
         });
 
-        expect(mockQueryExecutor.executeQuerySafe).toHaveBeenCalledWith(
-          'test',
+        expect(mockDriver.executeQuery).toHaveBeenCalledWith(
           'SELECT * FROM Users WHERE Id = @userId AND Status = @status',
-          { parameters, maxRows: 1000 }
+          parameters,
+          1000
         );
       });
 
@@ -113,7 +115,7 @@ describe('RunSelectQueryTool', () => {
           limited: true,
           rowCount: 1000,
         };
-        vi.mocked(mockQueryExecutor.executeQuerySafe).mockResolvedValue(limitedResult);
+        vi.mocked(mockDriver.executeQuery).mockResolvedValue(limitedResult);
 
         const result = await tool.execute({
           profile: 'test',
@@ -131,7 +133,7 @@ describe('RunSelectQueryTool', () => {
           columns: ['Id', 'Name'],
           limited: false,
         };
-        vi.mocked(mockQueryExecutor.executeQuerySafe).mockResolvedValue(emptyResult);
+        vi.mocked(mockDriver.executeQuery).mockResolvedValue(emptyResult);
 
         const result = await tool.execute({
           profile: 'test',
@@ -183,7 +185,7 @@ describe('RunSelectQueryTool', () => {
       });
 
       it('should accept valid maxRows range', async () => {
-        vi.mocked(mockQueryExecutor.executeQuerySafe).mockResolvedValue(mockQueryResult);
+        vi.mocked(mockDriver.executeQuery).mockResolvedValue(mockQueryResult);
 
         await expect(
           tool.execute({
@@ -196,8 +198,8 @@ describe('RunSelectQueryTool', () => {
     });
 
     describe('error handling', () => {
-      it('should propagate query executor errors', async () => {
-        vi.mocked(mockQueryExecutor.executeQuerySafe).mockRejectedValue(
+      it('should propagate driver errors', async () => {
+        vi.mocked(mockDriver.executeQuery).mockRejectedValue(
           new Error('Database connection failed')
         );
 
@@ -210,7 +212,7 @@ describe('RunSelectQueryTool', () => {
       });
 
       it('should handle SQL syntax errors', async () => {
-        vi.mocked(mockQueryExecutor.executeQuerySafe).mockRejectedValue(
+        vi.mocked(mockDriver.executeQuery).mockRejectedValue(
           new Error('Invalid column name')
         );
 
@@ -223,16 +225,12 @@ describe('RunSelectQueryTool', () => {
       });
 
       it('should reject non-SELECT queries', async () => {
-        vi.mocked(mockQueryExecutor.executeQuerySafe).mockRejectedValue(
-          new Error('Only SELECT queries are allowed')
-        );
-
         await expect(
           tool.execute({
             profile: 'test',
             query: 'INSERT INTO Users VALUES (1, "test")',
           })
-        ).rejects.toThrow();
+        ).rejects.toThrow('Only SELECT queries are allowed');
       });
     });
   });

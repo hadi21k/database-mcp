@@ -2,12 +2,12 @@ import { BaseResource } from '../core/base-resource.js';
 
 /**
  * Resource: Connection profiles
- * URI pattern: sqlserver:///profiles
+ * URI pattern: db:///profiles
  */
 export class ConnectionProfilesResource extends BaseResource {
-  readonly uriTemplate = 'sqlserver:///profiles';
+  readonly uriTemplate = 'db:///profiles';
   readonly name = 'Connection Profiles';
-  readonly description = 'Lists all available SQL Server connection profiles (without credentials).';
+  readonly description = 'Lists all available connection profiles (without credentials).';
   readonly mimeType = 'application/json';
 
   async getContent(_uri: string): Promise<string> {
@@ -16,7 +16,7 @@ export class ConnectionProfilesResource extends BaseResource {
     const result = {
       profiles: profiles.map((name) => ({
         name,
-        uri: `sqlserver:///${name}/info`,
+        uri: `db:///${name}/info`,
       })),
       count: profiles.length,
     };

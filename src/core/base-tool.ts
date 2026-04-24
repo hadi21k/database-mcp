@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ConnectionManager } from '../database/connection-manager.js';
-import { QueryExecutor } from '../database/query-executor.js';
+import type { IDatabaseDriver } from '../database/interfaces/database-driver.js';
 
 /**
  * Base class for all MCP tools
@@ -11,15 +11,19 @@ export abstract class BaseTool {
   abstract readonly description: string;
   abstract readonly inputSchema: z.ZodObject<any>;
 
-  constructor(
-    protected connectionManager: ConnectionManager,
-    protected queryExecutor: QueryExecutor
-  ) { }
+  constructor(protected connectionManager: ConnectionManager) {}
 
   /**
    * Execute the tool with validated input
    */
   abstract execute(input: any): Promise<any>;
+
+  /**
+   * Get a database driver for the given profile
+   */
+  protected async getDriver(profile: string): Promise<IDatabaseDriver> {
+    return this.connectionManager.getDriver(profile);
+  }
 
   /**
    * Validate input against schema

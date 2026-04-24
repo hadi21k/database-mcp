@@ -2,12 +2,12 @@ import { z } from 'zod';
 import { BaseTool } from '../core/base-tool.js';
 
 /**
- * Tool to list all tables in a SQL Server database
+ * Tool to list all tables in a database
  * Returns tables with schema, name, row count, and type information
  */
 export class ListTablesTool extends BaseTool {
   readonly name = 'list-tables';
-  readonly description = 'List all tables in the SQL Server database with schema, row counts, and type information (user tables only, excludes system tables).';
+  readonly description = 'List all tables in the database with schema, row counts, and type information (user tables only, excludes system tables).';
 
   readonly inputSchema = z.object({
     profile: z.string().describe('Connection profile name'),
@@ -18,7 +18,8 @@ export class ListTablesTool extends BaseTool {
     const validatedInput = this.validateInput(input);
     const { profile, schema } = validatedInput;
 
-    const result = await this.queryExecutor.listTables(profile, schema);
+    const driver = await this.getDriver(profile);
+    const result = await driver.listTables(schema);
 
     return {
       success: true,

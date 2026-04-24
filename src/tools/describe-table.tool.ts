@@ -7,7 +7,7 @@ import { BaseTool } from '../core/base-tool.js';
  */
 export class DescribeTableTool extends BaseTool {
   readonly name = 'describe-table';
-  readonly description = 'Get detailed schema information for a SQL Server table including columns, data types, nullability, primary keys, defaults, identity columns, computed columns, and column descriptions.';
+  readonly description = 'Get detailed schema information for a table including columns, data types, nullability, primary keys, defaults, identity columns, computed columns, and column descriptions.';
 
   readonly inputSchema = z.object({
     profile: z.string().describe('Connection profile name'),
@@ -19,7 +19,8 @@ export class DescribeTableTool extends BaseTool {
     const validatedInput = this.validateInput(input);
     const { profile, schema, table } = validatedInput;
 
-    const columns = await this.queryExecutor.describeTable(profile, schema, table);
+    const driver = await this.getDriver(profile);
+    const columns = await driver.describeTable(schema, table);
 
     return {
       success: true,

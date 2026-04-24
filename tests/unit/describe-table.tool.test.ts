@@ -1,20 +1,23 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DescribeTableTool } from '../../src/tools/describe-table.tool.js';
-import { ConnectionManager } from '../../src/database/connection-manager.js';
-import { QueryExecutor } from '../../src/database/query-executor.js';
+import type { IDatabaseDriver } from '../../src/database/interfaces/database-driver.js';
 import { mockTableSchema } from '../fixtures/table-data.js';
 
 describe('DescribeTableTool', () => {
   let tool: DescribeTableTool;
-  let mockConnectionManager: ConnectionManager;
-  let mockQueryExecutor: QueryExecutor;
+  let mockDriver: IDatabaseDriver;
 
   beforeEach(() => {
-    mockConnectionManager = {} as ConnectionManager;
-    mockQueryExecutor = {
+    mockDriver = {
+      dialect: 'sqlserver',
       describeTable: vi.fn(),
     } as any;
-    tool = new DescribeTableTool(mockConnectionManager, mockQueryExecutor);
+
+    const mockConnectionManager = {
+      getDriver: vi.fn().mockResolvedValue(mockDriver),
+    } as any;
+
+    tool = new DescribeTableTool(mockConnectionManager);
   });
 
   describe('Tool Properties', () => {
@@ -24,7 +27,6 @@ describe('DescribeTableTool', () => {
 
     it('should have descriptive description', () => {
       expect(tool.description).toContain('schema information');
-      expect(tool.description).toContain('SQL Server');
     });
 
     it('should have proper input schema', () => {
@@ -41,7 +43,7 @@ describe('DescribeTableTool', () => {
   describe('execute', () => {
     describe('with valid input', () => {
       it('should return table schema with summary', async () => {
-        vi.mocked(mockQueryExecutor.describeTable).mockResolvedValue(mockTableSchema);
+        vi.mocked(mockDriver.describeTable).mockResolvedValue(mockTableSchema);
 
         const result = await tool.execute({
           profile: 'test',
@@ -80,7 +82,7 @@ describe('DescribeTableTool', () => {
           },
         ];
 
-        vi.mocked(mockQueryExecutor.describeTable).mockResolvedValue(schemaWithComputed);
+        vi.mocked(mockDriver.describeTable).mockResolvedValue(schemaWithComputed);
 
         const result = await tool.execute({
           profile: 'test',
@@ -99,7 +101,7 @@ describe('DescribeTableTool', () => {
           isPrimaryKey: false,
         }));
 
-        vi.mocked(mockQueryExecutor.describeTable).mockResolvedValue(schemaNoPK);
+        vi.mocked(mockDriver.describeTable).mockResolvedValue(schemaNoPK);
 
         const result = await tool.execute({
           profile: 'test',
@@ -111,7 +113,7 @@ describe('DescribeTableTool', () => {
       });
 
       it('should handle empty column list', async () => {
-        vi.mocked(mockQueryExecutor.describeTable).mockResolvedValue([]);
+        vi.mocked(mockDriver.describeTable).mockResolvedValue([]);
 
         const result = await tool.execute({
           profile: 'test',
@@ -165,8 +167,8 @@ describe('DescribeTableTool', () => {
     });
 
     describe('error handling', () => {
-      it('should propagate query executor errors', async () => {
-        vi.mocked(mockQueryExecutor.describeTable).mockRejectedValue(
+      it('should propagate driver errors', async () => {
+        vi.mocked(mockDriver.describeTable).mockRejectedValue(
           new Error('Database connection failed')
         );
 
@@ -180,7 +182,7 @@ describe('DescribeTableTool', () => {
       });
 
       it('should handle non-existent tables gracefully', async () => {
-        vi.mocked(mockQueryExecutor.describeTable).mockRejectedValue(
+        vi.mocked(mockDriver.describeTable).mockRejectedValue(
           new Error('Table or view not found')
         );
 
