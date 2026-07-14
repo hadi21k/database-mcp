@@ -1,0 +1,17 @@
+{
+  "sqlserver-example": {
+    "databaseType": "sqlserver",
+    "server": "localhost",
+    "database": "MyDatabase",
+    "user": "REPLACE_WITH_DB_USER",
+    "password": "REPLACE_WITH_DB_PASSWORD",
+    "options": {
+      "encrypt": true,
+      "trustServerCertificate": false
+    }
+  },
+  "postgres-example": {
+    "databaseType": "postgresql",
+    "connectionString": "postgresql://REPLACE_WITH_DB_USER:REPLACE_WITH_DB_PASSWORD@localhost:5432/mydatabase"
+  }
+}

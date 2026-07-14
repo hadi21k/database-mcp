@@ -29,7 +29,8 @@ export class SqlServerDriver implements IDatabaseDriver {
     params?: Record<string, any>,
     maxRows?: number
   ): Promise<IQueryResult> {
-    const limitedQuery = maxRows ? injectRowLimit(this.dialect, query, maxRows) : query;
+    const limitedQuery =
+      maxRows !== undefined ? injectRowLimit(this.dialect, query, maxRows) : query;
 
     try {
       const request = this.pool.request();
@@ -43,13 +44,22 @@ export class SqlServerDriver implements IDatabaseDriver {
       const columns = result.recordset.columns
         ? Object.keys(result.recordset.columns)
         : [];
-      const rowCount = result.recordset?.length || 0;
+      const recordset = result.recordset || [];
+      const fetchedCount = recordset.length;
+
+      // Authoritative cap: TOP injection is best-effort (it only limits the first
+      // branch of a UNION and can be suppressed by a subquery TOP), so enforce
+      // the row cap here regardless of query shape.
+      const rows =
+        maxRows !== undefined && fetchedCount > maxRows
+          ? recordset.slice(0, maxRows)
+          : recordset;
 
       return {
-        rows: result.recordset || [],
-        rowCount,
+        rows,
+        rowCount: rows.length,
         columns,
-        limited: maxRows ? rowCount >= maxRows : undefined,
+        limited: maxRows !== undefined ? fetchedCount >= maxRows : undefined,
       };
     } catch (error) {
       throw createFriendlyError(error);

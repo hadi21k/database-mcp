@@ -6,14 +6,24 @@ export function sanitizeError(error: unknown): string {
     // Remove stack traces
     let message = error.message;
 
-    // Remove connection string details
-    message = message.replace(/server=([^;]+)/gi, 'server=***');
-    message = message.replace(/user=([^;]+)/gi, 'user=***');
-    message = message.replace(/password=([^;]+)/gi, 'password=***');
-    message = message.replace(/pwd=([^;]+)/gi, 'pwd=***');
+    // Remove URL-form credentials first: postgresql://user:pass@host -> ***
+    // (do this before the key=value masking so the host isn't left exposed).
+    message = message.replace(
+      /\b([a-z][a-z0-9+.-]*):\/\/[^\s/@]+(:[^\s/@]+)?@[^\s/]+/gi,
+      '$1://***'
+    );
 
-    // Remove IP addresses
+    // Remove key=value connection string / libpq details
+    message = message.replace(/\b(server|host|hostaddr|data source)\s*=\s*[^;\s]+/gi, '$1=***');
+    message = message.replace(/\b(user|uid|user id|username)\s*=\s*[^;\s]+/gi, '$1=***');
+    message = message.replace(/\b(password|pwd|pass)\s*=\s*[^;\s]+/gi, '$1=***');
+
+    // Remove IPv4 addresses
     message = message.replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '***.***.***.**');
+
+    // Remove IPv6 addresses (bracketed or bare, 2+ hextet groups)
+    message = message.replace(/\[[0-9a-f:]+\]/gi, '[***]');
+    message = message.replace(/\b(?:[0-9a-f]{1,4}:){2,}[0-9a-f]{1,4}\b/gi, '***');
 
     // Remove file paths
     message = message.replace(/[A-Za-z]:\\[^\s]+/g, '***');

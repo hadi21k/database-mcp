@@ -198,13 +198,19 @@ When using `connectionString`, the `server`, `database`, `user`, and `password` 
 
 ## Security
 
-- **Read-only enforcement** — INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, EXEC, MERGE, GRANT, REVOKE are all blocked
-- **Automatic row limiting** — Queries limited to 1000 rows by default (max 10,000)
-- **Cross-database blocking** — Three-part names (database.schema.table) are rejected
-- **Parameter validation** — Only alphanumeric parameter names allowed
-- **Error sanitization** — Credentials, IPs, and file paths are masked in error output
+Security is layered, and the layers have different jobs.
 
-**Best practice:** Create a read-only database user for the MCP server.
+**The boundary is the database.** The strongest control by far is connecting with a least-privilege, read-only database login (see below) — writes are then rejected by the database engine itself, not by string inspection. In addition, PostgreSQL user queries run inside a `SET TRANSACTION READ ONLY` transaction, so the server refuses any write or DDL regardless of how the query is written.
+
+**Pre-flight gate (defense-in-depth).** Before a query reaches the database, a validator fails obvious writes early with a friendly message:
+
+- **Read-only check** — single-statement only; must start with SELECT/WITH; INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, EXEC, MERGE, GRANT, REVOKE, `SELECT ... INTO`, and known side-effecting functions are blocked
+- **Automatic row limiting** — capped at 1000 rows by default (max 10,000), enforced on the returned rows regardless of query shape
+- **Cross-database blocking** — multi-part names (database.schema.table and linked-server names) are rejected
+- **Parameter validation** — only alphanumeric parameter names allowed
+- **Error sanitization** — credentials (including connection-string and URL forms), IPv4/IPv6 addresses, and file paths are masked in error output
+
+> The validator is a fast pre-flight, not the guarantee. A string-based check can never be complete (side-effecting functions, engine-specific syntax). **Always** point the server at a read-only login:
 
 ```sql
 -- PostgreSQL

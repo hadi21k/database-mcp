@@ -16,6 +16,10 @@ function createMockSql() {
   // sql.end()
   mockSql.end = vi.fn().mockResolvedValue(undefined);
 
+  // sql.begin(async (tx) => ...) — invokes the callback with the same mock
+  // as the transaction object, so tx.unsafe === mockSql.unsafe.
+  mockSql.begin = vi.fn(async (cb: (tx: any) => any) => cb(mockSql));
+
   // sql(array) — used for IN clauses with tagged templates
   mockSql.mockImplementation((...args: any[]) => {
     // When called as tagged template sql`...`, args[0] is TemplateStringsArray
@@ -83,7 +87,7 @@ describe('PostgresDriver', () => {
 
       await driver.executeQuery('SELECT * FROM users', undefined, 100);
 
-      const calledQuery = mockSql.unsafe.mock.calls[0][0];
+      const calledQuery = mockSql.unsafe.mock.calls.at(-1)[0];
       expect(calledQuery).toContain('LIMIT 100');
     });
 
@@ -94,7 +98,7 @@ describe('PostgresDriver', () => {
 
       await driver.executeQuery('SELECT * FROM users');
 
-      const calledQuery = mockSql.unsafe.mock.calls[0][0];
+      const calledQuery = mockSql.unsafe.mock.calls.at(-1)[0];
       expect(calledQuery).not.toContain('LIMIT');
     });
 
@@ -140,7 +144,7 @@ describe('PostgresDriver', () => {
         { id: 1 }  // email not in params
       );
 
-      const calledQuery = mockSql.unsafe.mock.calls[0][0];
+      const calledQuery = mockSql.unsafe.mock.calls.at(-1)[0];
       expect(calledQuery).toContain('@email');
       expect(calledQuery).not.toContain('$');
     });
@@ -149,6 +153,17 @@ describe('PostgresDriver', () => {
       mockSql.unsafe.mockRejectedValue(new Error('relation does not exist'));
 
       await expect(driver.executeQuery('SELECT * FROM nonexistent')).rejects.toThrow();
+    });
+
+    it('should run the query inside a read-only transaction', async () => {
+      mockSql.unsafe.mockResolvedValue(
+        Object.assign([], { columns: [] })
+      );
+
+      await driver.executeQuery('SELECT * FROM users');
+
+      expect(mockSql.begin).toHaveBeenCalled();
+      expect(mockSql.unsafe).toHaveBeenCalledWith('SET TRANSACTION READ ONLY');
     });
   });
 

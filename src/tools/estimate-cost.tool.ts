@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BaseTool } from '../core/base-tool.js';
-import { isReadOnlyQuery } from '../utils/validation.js';
+import { isReadOnlyQuery, hasCrossDatabaseQuery, validateParameters } from '../utils/validation.js';
 
 /**
  * Tool to estimate the execution cost for a query.
@@ -29,6 +29,14 @@ export class EstimateCostTool extends BaseTool {
       throw new Error(
         'Only SELECT queries can be analyzed. INSERT, UPDATE, DELETE, and DDL statements are not permitted.'
       );
+    }
+    if (hasCrossDatabaseQuery(query)) {
+      throw new Error(
+        'Cross-database queries are not allowed. Use single-database queries only (schema.table, not database.schema.table).'
+      );
+    }
+    if (parameters) {
+      validateParameters(parameters);
     }
 
     const driver = await this.getDriver(profile);

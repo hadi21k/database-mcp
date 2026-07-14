@@ -54,19 +54,35 @@ export class PostgresDriver implements IDatabaseDriver {
     params?: Record<string, any>,
     maxRows?: number
   ): Promise<IQueryResult> {
-    const limitedQuery = maxRows ? injectRowLimit(this.dialect, query, maxRows) : query;
+    const limitedQuery =
+      maxRows !== undefined ? injectRowLimit(this.dialect, query, maxRows) : query;
     const { query: convertedQuery, values } = convertNamedParams(limitedQuery, params);
 
     try {
-      const result = await this.sql.unsafe(convertedQuery, values);
+      // Execute inside a read-only transaction so the database itself rejects
+      // any write or DDL that slipped past the query validator. This (together
+      // with a least-privilege read-only login, see README) is the real
+      // security boundary; the validator is only a fast pre-flight gate.
+      const result: any = await this.sql.begin(async (tx) => {
+        await tx.unsafe('SET TRANSACTION READ ONLY');
+        return tx.unsafe(convertedQuery, values);
+      });
       const columns = result.columns?.map((c: any) => c.name) || [];
-      const rowCount = result.length;
+      const fetchedCount = result.length;
+
+      // Authoritative cap: SQL-level limit injection is best-effort (it can miss
+      // UNION branches, subquery limits, or trailing comments), so enforce the
+      // row cap here regardless of query shape.
+      const rows =
+        maxRows !== undefined && fetchedCount > maxRows
+          ? [...result].slice(0, maxRows)
+          : [...result];
 
       return {
-        rows: [...result],
-        rowCount,
+        rows,
+        rowCount: rows.length,
         columns,
-        limited: maxRows ? rowCount >= maxRows : undefined,
+        limited: maxRows !== undefined ? fetchedCount >= maxRows : undefined,
       };
     } catch (error) {
       throw createFriendlyError(error);

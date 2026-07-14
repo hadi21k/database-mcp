@@ -116,7 +116,10 @@ export function parsePostgresConnectionString(connectionString: string): Connect
     return profile;
   } catch (error) {
     if (error instanceof TypeError) {
-      throw new Error(`Invalid PostgreSQL connection string: ${connectionString}`);
+      // Never echo the raw connection string: it contains the password.
+      throw new Error(
+        'Invalid PostgreSQL connection string. Expected postgresql://user:password@host:port/database'
+      );
     }
     throw error;
   }
