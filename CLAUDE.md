@@ -66,13 +66,18 @@ Tools and resources interact only with `IDatabaseDriver`, never with database-sp
 3. Use `this.getDriver(profile)` to get an `IDatabaseDriver` instance
 4. Export from `src/tools/index.ts`
 5. Register the tool class in `registerBuiltins()` in `server.ts`
-6. Add MCP registration in `setupTools()` in `server.ts`
+
+`setupTools()` registers every tool in the `ToolRegistry` automatically (name,
+description, Zod input schema, and a `readOnlyHint` annotation), so no per-tool
+MCP wiring is needed. The tool's `name` also drives its display title.
 
 For database-specific tools, check `driver.dialect` and throw if the wrong database type is used.
 
 ### Security Model
 
-All enforcement lives in `src/utils/validation.ts`:
+**The security boundary is the database, not the validator.** User queries run inside a PostgreSQL read-only transaction (`SET TRANSACTION READ ONLY` in `PostgresDriver.executeQuery`), and the documented setup is a least-privilege read-only DB login (`GRANT SELECT` only, no write/DDL). These reject writes regardless of what the query text says. The validator in `src/utils/validation.ts` is a fast pre-flight gate that fails obvious writes early with a friendly message; it is defense-in-depth, not the guarantee. (SQL Server has no per-session read-only toggle on a primary, so there the read-only login is the boundary.)
+
+Pre-flight enforcement in `src/utils/validation.ts`:
 
 - **Read-only enforcement**: `isReadOnlyQuery()` blocks INSERT/UPDATE/DELETE/DROP/CREATE/ALTER/EXEC/MERGE/GRANT/REVOKE
 - **Row limiting**: `injectRowLimit()` dispatches to `injectTopClause()` (SQL Server) or `injectLimitClause()` (PostgreSQL)
