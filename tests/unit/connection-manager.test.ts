@@ -158,4 +158,18 @@ describe('ConnectionManager', () => {
       expect(result).toBe(false);
     });
   });
+
+  describe('concurrent getDriver calls', () => {
+    it('should not throw synchronously and both settle as rejected for a cold, unreachable profile', async () => {
+      manager.addProfile('concurrent', validProfile);
+
+      const [first, second] = await Promise.allSettled([
+        manager.getDriver('concurrent'),
+        manager.getDriver('concurrent'),
+      ]);
+
+      expect(first.status).toBe('rejected');
+      expect(second.status).toBe('rejected');
+    });
+  });
 });

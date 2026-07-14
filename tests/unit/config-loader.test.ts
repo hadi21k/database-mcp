@@ -52,8 +52,8 @@ describe('ConfigLoader', () => {
     it('should throw error if config file has invalid JSON', () => {
       writeFileSync(testConfigPath, 'invalid json{]');
       process.env.SQLSERVER_CONFIG_FILE = testConfigPath;
-      
-      expect(() => ConfigLoader.load([])).toThrow('Failed to read config file');
+
+      expect(() => ConfigLoader.load([])).toThrow(/config file/);
     });
   });
 

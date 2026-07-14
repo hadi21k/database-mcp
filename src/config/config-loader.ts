@@ -6,6 +6,34 @@ import { readFileSync } from 'fs';
  */
 export class ConfigLoader {
   /**
+   * Parse a JSON connections blob and assert it is a plain object mapping
+   * profile names to profile objects. This is the untrusted config boundary, so
+   * validate the shape here rather than casting blindly.
+   */
+  private static parseConnections(raw: string, source: string): ConnectionProfiles {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      throw new Error(
+        `Failed to parse ${source}: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error(`Invalid ${source}: expected a JSON object of connection profiles`);
+    }
+
+    for (const [name, profile] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof profile !== 'object' || profile === null || Array.isArray(profile)) {
+        throw new Error(`Invalid ${source}: profile "${name}" must be an object`);
+      }
+    }
+
+    return parsed as ConnectionProfiles;
+  }
+
+  /**
    * Load configuration from SQLSERVER_CONFIG_FILE or SQLSERVER_CONNECTIONS environment variable
    */
   static load(args: string[] = process.argv.slice(2)): ServerConfig {
@@ -13,10 +41,9 @@ export class ConfigLoader {
     const configFilePath = process.env.SQLSERVER_CONFIG_FILE;
 
     if (configFilePath) {
+      let fileContent: string;
       try {
-        const fileContent = readFileSync(configFilePath, 'utf-8');
-        const connections = JSON.parse(fileContent) as ConnectionProfiles;
-        return { connections };
+        fileContent = readFileSync(configFilePath, 'utf-8');
       } catch (error) {
         throw new Error(
           `Failed to read config file at ${configFilePath}: ${
@@ -24,37 +51,20 @@ export class ConfigLoader {
           }`
         );
       }
+      return { connections: this.parseConnections(fileContent, `config file at ${configFilePath}`) };
     }
 
     // Try environment variable with JSON string
     const envConfig = process.env.SQLSERVER_CONNECTIONS;
 
     if (envConfig) {
-      try {
-        const connections = JSON.parse(envConfig) as ConnectionProfiles;
-        return { connections };
-      } catch (error) {
-        throw new Error(
-          `Failed to parse SQLSERVER_CONNECTIONS environment variable: ${
-            error instanceof Error ? error.message : 'Unknown error'
-          }`
-        );
-      }
+      return { connections: this.parseConnections(envConfig, 'SQLSERVER_CONNECTIONS environment variable') };
     }
 
     // Try command-line arguments
     const configIndex = args.indexOf('--config');
     if (configIndex !== -1 && args[configIndex + 1]) {
-      try {
-        const connections = JSON.parse(args[configIndex + 1]) as ConnectionProfiles;
-        return { connections };
-      } catch (error) {
-        throw new Error(
-          `Failed to parse --config argument: ${
-            error instanceof Error ? error.message : 'Unknown error'
-          }`
-        );
-      }
+      return { connections: this.parseConnections(args[configIndex + 1], '--config argument') };
     }
 
     throw new Error(
