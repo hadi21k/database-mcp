@@ -15,6 +15,7 @@ export default defineConfig({
       exclude: [
         'src/**/*.test.ts',
         'src/index.ts',
+        'src/server.ts', // MCP transport wiring; exercised via integration, not unit tests
         'src/extensions/**',
       ],
       thresholds: {
